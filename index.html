@@ -261,6 +261,58 @@
             50% { box-shadow: 0 0 30px var(--term-glow-strong), inset 0 0 30px rgba(0, 255, 0, 0.6); }
         }
 
+        #media-player-container {
+            display: none;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid var(--term-green);
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 10px;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+        }
+
+        #media-player-container.active {
+            display: block;
+        }
+
+        .media-info {
+            color: var(--cyan);
+            font-size: 11px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-shadow: var(--cyan-glow);
+        }
+
+        .media-controls {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .media-button {
+            background: transparent;
+            border: 1px solid var(--term-green);
+            color: var(--term-green);
+            padding: 5px 10px;
+            cursor: pointer;
+            font-family: var(--font-stack);
+            font-size: 11px;
+            transition: all 0.2s;
+            text-transform: uppercase;
+        }
+
+        .media-button:hover {
+            background-color: rgba(0, 255, 0, 0.1);
+            box-shadow: 0 0 8px var(--term-glow);
+        }
+
+        .volume-slider {
+            width: 60px;
+            height: 4px;
+            cursor: pointer;
+        }
+
         /* Header Title */
         .header-title {
             position: fixed;
@@ -461,6 +513,19 @@
 
     <audio id="radio-player"></audio>
 
+    <div id="media-player-container">
+        <div class="media-info">
+            🎙️ <span id="station-name">LIVE - movedahouse.com</span> (UK7)
+        </div>
+        <div class="media-controls">
+            <button class="media-button" id="play-btn">▶ PLAY</button>
+            <button class="media-button" id="pause-btn">⏸ PAUSE</button>
+            <button class="media-button" id="stop-btn">⏹ STOP</button>
+            <input type="range" id="volume-slider" class="volume-slider" min="0" max="100" value="70">
+            <span id="volume-label" style="color: var(--term-green); font-size: 11px;">70%</span>
+        </div>
+    </div>
+
     <script>
         const BROKER_HOST = "broker.emqx.io";
         const BROKER_PORT = 8084;
@@ -478,11 +543,19 @@
         const bgPhoto = document.getElementById('bg-photo');
         let client = null;
 
-        // Radio streaming URL using playlist generator
-        const RADIO_STREAM_URL = "http://uk4.internet-radio.com:8049/";
-        let isPlaying = false;
+        // Radio streaming URL - UK7 Direct Stream for LIVE movedahouse.com
+        const RADIO_STREAM_URL = "http://uk7.internet-radio.com:8000/";
+        const RADIO_STATION_NAME = "LIVE - movedahouse.com";
 
-        // Avatar and Photo Gallery
+        // Media player elements
+        const mediaContainer = document.getElementById('media-player-container');
+        const playBtn = document.getElementById('play-btn');
+        const pauseBtn = document.getElementById('pause-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const volumeSlider = document.getElementById('volume-slider');
+        const volumeLabel = document.getElementById('volume-label');
+        const stationName = document.getElementById('station-name');
+        let isPlaying = false;
         let userAvatar = null; // Base64 encoded avatar
         let userPhotos = []; // Array of photo data URLs
 
@@ -657,11 +730,13 @@
                 radioPlayer.currentTime = 0;
                 listenBtn.classList.remove('playing');
                 listenBtn.textContent = 'LISTEN';
+                mediaContainer.classList.remove('active');
                 isPlaying = false;
                 log("RADIJO SRAUTAS SUSTABDYTAS ⏹", 'system-msg');
             } else {
                 listenBtn.textContent = 'CONNECTING...';
                 listenBtn.disabled = true;
+                mediaContainer.classList.add('active');
                 
                 radioPlayer.src = RADIO_STREAM_URL;
                 radioPlayer.crossOrigin = "anonymous";
@@ -672,21 +747,63 @@
                     playPromise
                         .then(() => {
                             listenBtn.classList.add('playing');
-                            listenBtn.textContent = 'STOP ⏸';
+                            listenBtn.textContent = 'STOP ⏹';
                             listenBtn.disabled = false;
                             isPlaying = true;
-                            log("RADIJAS GROJA ♫ UK RADIO STREAM", 'greeting-msg');
+                            log("RADIJAS GROJA ♫ " + RADIO_STATION_NAME, 'greeting-msg');
                         })
                         .catch(err => {
                             log("RADIJO KLAIDA: " + err.name + " (" + err.code + ")", 'error-msg');
                             listenBtn.textContent = 'LISTEN';
                             listenBtn.disabled = false;
+                            mediaContainer.classList.remove('active');
                             isPlaying = false;
                             console.error('Radio playback error:', err);
                         });
                 }
             }
         });
+
+        // Media player controls
+        playBtn.addEventListener('click', function() {
+            if (!isPlaying) {
+                radioPlayer.src = RADIO_STREAM_URL;
+                radioPlayer.crossOrigin = "anonymous";
+                radioPlayer.play().then(() => {
+                    isPlaying = true;
+                    listenBtn.classList.add('playing');
+                    listenBtn.textContent = 'STOP ⏹';
+                    log("RADIJAS GROJA ♫ " + RADIO_STATION_NAME, 'greeting-msg');
+                }).catch(err => {
+                    log("RADIJO KLAIDA: " + err.name, 'error-msg');
+                });
+            }
+        });
+
+        pauseBtn.addEventListener('click', function() {
+            if (isPlaying) {
+                radioPlayer.pause();
+                log("RADIJAS SUSTABDYTAS ⏸ (PAUZĖ)", 'system-msg');
+            }
+        });
+
+        stopBtn.addEventListener('click', function() {
+            radioPlayer.pause();
+            radioPlayer.currentTime = 0;
+            listenBtn.classList.remove('playing');
+            listenBtn.textContent = 'LISTEN';
+            mediaContainer.classList.remove('active');
+            isPlaying = false;
+            log("RADIJO SRAUTAS SUSTABDYTAS ⏹", 'system-msg');
+        });
+
+        volumeSlider.addEventListener('input', function() {
+            radioPlayer.volume = this.value / 100;
+            volumeLabel.textContent = this.value + '%';
+        });
+
+        // Set initial volume
+        radioPlayer.volume = 0.7;
 
         radioPlayer.addEventListener('error', (e) => {
             const errorCodes = {
