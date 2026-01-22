@@ -394,8 +394,8 @@
         let client = null;
 
         // Radio streaming URL (online radio)
-        // Using a local M3U playlist file
-        const RADIO_STREAM = "/radio.m3u";
+        // Direct stream from M3U file
+        const RADIO_STREAM = "http://uk4.internet-radio.com:8049/";
         let isPlaying = false;
 
         // --- TYPEWRITER EFFECT ---
@@ -547,58 +547,68 @@
                 listenBtn.classList.remove('playing');
                 listenBtn.textContent = 'LISTEN';
                 isPlaying = false;
-                log("RADIJO SRAUTAS SUSTABDYTAS", 'system-msg');
+                log("RADIJO SRAUTAS SUSTABDYTAS ⏹", 'system-msg');
             } else {
                 listenBtn.textContent = 'CONNECTING...';
                 listenBtn.disabled = true;
                 
+                // Set multiple attributes for best compatibility
                 radioPlayer.src = RADIO_STREAM;
-                radioPlayer.crossOrigin = "anonymous";
                 radioPlayer.type = "audio/mpeg";
+                radioPlayer.crossOrigin = "anonymous";
+                radioPlayer.preload = "none";
                 
-                const playPromise = radioPlayer.play();
-                
-                if (playPromise !== undefined) {
-                    playPromise
-                        .then(() => {
-                            listenBtn.classList.add('playing');
-                            listenBtn.textContent = 'STOP';
-                            listenBtn.disabled = false;
-                            isPlaying = true;
-                            log("RADIJO SRAUTAS PRADĖTAS ▶", 'greeting-msg');
-                        })
-                        .catch(err => {
-                            log("RADIJO KLAIDA: " + err.message, 'error-msg');
-                            listenBtn.textContent = 'LISTEN';
-                            listenBtn.disabled = false;
-                            isPlaying = false;
-                            console.error('Radio error:', err);
-                        });
-                } else {
-                    log("RADIJO SRAUTAS NEPASIEKIAMAS", 'error-msg');
-                    listenBtn.textContent = 'LISTEN';
-                    listenBtn.disabled = false;
-                    isPlaying = false;
-                }
+                // Create a small delay to ensure browser is ready
+                setTimeout(() => {
+                    const playPromise = radioPlayer.play();
+                    
+                    if (playPromise !== undefined) {
+                        playPromise
+                            .then(() => {
+                                listenBtn.classList.add('playing');
+                                listenBtn.textContent = 'STOP ⏸';
+                                listenBtn.disabled = false;
+                                isPlaying = true;
+                                log("RADIJAS GROJA ♫ UK RADIO", 'greeting-msg');
+                            })
+                            .catch(err => {
+                                log("RADIJO KLAIDA: " + err.name + " - " + err.message, 'error-msg');
+                                listenBtn.textContent = 'LISTEN';
+                                listenBtn.disabled = false;
+                                isPlaying = false;
+                                console.error('Radio play error:', err);
+                            });
+                    }
+                }, 200);
             }
         });
 
-        // Handle radio player events
+        // Handle audio player events
         radioPlayer.addEventListener('play', () => {
-            log("RADIJAS GROJA ♫", 'greeting-msg');
+            console.log('Radio playing');
+        });
+
+        radioPlayer.addEventListener('pause', () => {
+            console.log('Radio paused');
         });
 
         radioPlayer.addEventListener('error', (e) => {
-            log("RADIJO KLAIDAA: SRAUTAS NEPRIEINAMA", 'error-msg');
+            const errorMsg = radioPlayer.error ? 
+                `Error code: ${radioPlayer.error.code}` : 'Unknown error';
+            log("RADIJO SRAUTAS KLAIDA: " + errorMsg, 'error-msg');
             listenBtn.classList.remove('playing');
             listenBtn.textContent = 'LISTEN';
             listenBtn.disabled = false;
             isPlaying = false;
-            console.error('Radio stream error:', e);
+            console.error('Radio error event:', e, radioPlayer.error);
         });
 
-        radioPlayer.addEventListener('loadedmetadata', () => {
-            log("RADIJO METADUOMENYS GAUTI ✓", 'system-msg');
+        radioPlayer.addEventListener('stalled', () => {
+            log("RADIJO SRAUTAS LAUKIAMA DUOMENŲ...", 'system-msg');
+        });
+
+        radioPlayer.addEventListener('canplay', () => {
+            log("RADIJO SRAUTAS GATA", 'system-msg');
         });
 
         window.onload = bootSystem;
