@@ -543,21 +543,19 @@
         const bgPhoto = document.getElementById('bg-photo');
         let client = null;
 
-        // Radio streaming URLs - Multiple formats for UK stations
+        // Radio streaming URLs - Multiple formats and fallback options
         const RADIO_STREAMS = [
-            // Player format (primary)
-            "http://player.internet-radio.com/?server=uk7.internet-radio.com:8000",
-            // UK2 Direct Streams
-            "http://uk2.internet-radio.com:8024/",
-            "http://uk2.internet-radio.com:8024/stream",
-            "http://uk2.internet-radio.com:8024/listen.pls",
-            "http://uk2.internet-radio.com:8024/listen.m3u",
-            // UK7 Streams (alternative endpoints)
-            "http://uk7.internet-radio.com:8000/stream",
+            // Direct stream attempts for UK7/movedahouse
             "http://uk7.internet-radio.com:8000/",
-            // CORS Proxy alternatives
-            "https://cors-anywhere.herokuapp.com/http://uk7.internet-radio.com:8000/",
-            "https://api.allorigins.win/raw?url=http://uk7.internet-radio.com:8000/"
+            "http://uk7.internet-radio.com:8000",
+            "http://uk7.internet-radio.com:8000/live",
+            "http://uk7.internet-radio.com:8000/stream.mp3",
+            // Alternative ShoutCast/Icecast formats
+            "http://uk7.internet-radio.com:8000/index.m3u",
+            "http://uk7.internet-radio.com:8000/listen.m3u",
+            // Try with HTTP fallback instead of player interface
+            "http://uk7.internet-radio.com:8000/;stream.mp3",
+            "http://uk7.internet-radio.com:8000?nocache=" + Date.now()
         ];
         let currentStreamIndex = 0;
         const RADIO_STATION_NAME = "LIVE - movedahouse.com";
@@ -741,9 +739,17 @@
         // --- RADIO LISTENER ---
         function tryNextStream() {
             if (currentStreamIndex < RADIO_STREAMS.length) {
-                const url = RADIO_STREAMS[currentStreamIndex];
+                let url = RADIO_STREAMS[currentStreamIndex];
                 const streamNum = currentStreamIndex + 1;
-                log(`[${streamNum}/${RADIO_STREAMS.length}] BANDOME: ${url.substring(0, 60)}...`, 'system-msg');
+                
+                // Add cache buster for some URLs
+                if (url.includes('?')) {
+                    url = url.replace("Date.now()", Date.now());
+                } else if (url.endsWith('/')) {
+                    url = url + "?nocache=" + Date.now();
+                }
+                
+                log(`[${streamNum}/${RADIO_STREAMS.length}] BANDOME: ${url.substring(0, 55)}...`, 'system-msg');
                 radioPlayer.src = url;
                 radioPlayer.crossOrigin = "anonymous";
                 radioPlayer.load();
@@ -754,10 +760,10 @@
                         currentStreamIndex++;
                         if (currentStreamIndex < RADIO_STREAMS.length) {
                             log(`SRAUTAS NEPAVYKO, BANDOME KITĄ...`, 'system-msg');
-                            setTimeout(() => tryNextStream(), 500);
+                            setTimeout(() => tryNextStream(), 800);
                         } else {
                             log("❌ VISOS SRAUTŲ VERSIJOS NEPAVYKO", 'error-msg');
-                            log("Patikrinkite URL arba bandykite vėliau", 'error-msg');
+                            log("Radijo srautai gali būti užblokuoti arba nedostupūs", 'error-msg');
                             listenBtn.textContent = 'LISTEN';
                             listenBtn.disabled = false;
                             mediaContainer.classList.remove('active');
@@ -783,7 +789,7 @@
                 listenBtn.disabled = true;
                 mediaContainer.classList.add('active');
                 currentStreamIndex = 0;
-                log(`BANDAU PRISIJUNGTI PER ${RADIO_STREAMS.length} SKIRTINGUS SRAUTUS...`, 'system-msg');
+                log(`BANDAU PRISIJUNGTI... (${RADIO_STREAMS.length} VARIANTŲ)`, 'system-msg');
                 tryNextStream();
             }
         });
@@ -794,7 +800,7 @@
                 listenBtn.textContent = 'CONNECTING...';
                 listenBtn.disabled = true;
                 currentStreamIndex = 0;
-                log(`BANDAU PRISIJUNGTI PER ${RADIO_STREAMS.length} SKIRTINGUS SRAUTUS...`, 'system-msg');
+                log(`BANDAU PRISIJUNGTI... (${RADIO_STREAMS.length} VARIANTŲ)`, 'system-msg');
                 tryNextStream();
                 isPlaying = true;
             }
@@ -832,7 +838,7 @@
                 listenBtn.disabled = false;
                 const successUrl = RADIO_STREAMS[currentStreamIndex];
                 log("✅ RADIJAS GROJA! ♫ " + RADIO_STATION_NAME, 'greeting-msg');
-                log("SRAUTAS: " + successUrl, 'system-msg');
+                log("SRAUTAS: " + successUrl.substring(0, 70), 'system-msg');
             }
         });
 
