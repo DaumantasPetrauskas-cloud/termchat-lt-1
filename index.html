@@ -583,6 +583,33 @@
         const MAX_MESSAGES = 100;
         let reconnectAttempts = 0;
         const MAX_RECONNECT_ATTEMPTS = 5;
+        
+        // AI Integration
+        let aiEnabled = false;
+        const AI_USER_ID = "TERMAI";
+        
+        // Initialize AI if available
+        async function initAI() {
+            try {
+                aiEnabled = true;
+                log("AI SISTEMA AKTYVUOTA", 'greeting-msg');
+            } catch (e) {
+                log("AI NEPASIEKIAMAS - NAUDOJAMAS LOKALUS REŽIMAS", 'system-msg');
+            }
+        }
+        
+        async function getAIResponse(message) {
+            if (!aiEnabled) return null;
+            // Simple AI responses for demo
+            const responses = [
+                "Labas! Kaip galiu padėti?",
+                "Įdomu! Papasakok daugiau.",
+                "Suprantu. Ką dar norėtum žinoti?",
+                "TermChat LT yra puikus!",
+                "Ačiū už klausimą!"
+            ];
+            return responses[Math.floor(Math.random() * responses.length)];
+        }
 
         // --- TYPEWRITER EFFECT ---
         function typeWriter(text, element, speed = 30) {
@@ -696,7 +723,26 @@
                     if (payload.avatar && payload.avatar.startsWith('data:image/')) {
                         msgHTML = `<img src="${payload.avatar}" class="user-avatar" alt="${payload.id}"> <${payload.id}> ${sanitizedMsg}`;
                     }
-                    log(msgHTML, 'stranger-msg');
+                    log(msgHTML, payload.id === AI_USER_ID ? 'greeting-msg' : 'stranger-msg');
+                    
+                    // AI responds to messages mentioning it or questions
+                    if (aiEnabled && payload.id !== AI_USER_ID && 
+                        (sanitizedMsg.toLowerCase().includes('ai') || 
+                         sanitizedMsg.toLowerCase().includes('termai') || 
+                         sanitizedMsg.includes('?'))) {
+                        setTimeout(async () => {
+                            const aiResponse = await getAIResponse(sanitizedMsg);
+                            if (aiResponse) {
+                                const aiMsg = new Paho.MQTT.Message(JSON.stringify({
+                                    type: 'chat',
+                                    id: AI_USER_ID,
+                                    msg: aiResponse
+                                }));
+                                aiMsg.destinationName = TOPIC;
+                                client.send(aiMsg);
+                            }
+                        }, 1500);
+                    }
                     
                 } else if (payload.type === 'avatar') {
                     if (payload.avatar && payload.avatar.startsWith('data:image/')) {
@@ -918,6 +964,7 @@
             userID = username;
             document.getElementById('login-screen').style.display = 'none';
             loadAvatarFromStorage();
+            initAI(); // Initialize AI after login
             bootSystem();
         }
 

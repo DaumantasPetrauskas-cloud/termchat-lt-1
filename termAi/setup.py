@@ -3,11 +3,10 @@ from setuptools import setup, find_packages
 setup(
     name="termAi",
     version="0.1.0",
+    author="Your Name",
+    description="A custom AI library built from scratch.",
     packages=find_packages(),
     install_requires=[
-        "numpy>=1.20.0",
+        "numpy", # We need numpy for math operations
     ],
-    author="TermChat LT",
-    description="Minimal AI library for TermChat LT",
-    python_requires=">=3.7",
 )
