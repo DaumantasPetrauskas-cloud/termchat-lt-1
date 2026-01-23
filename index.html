@@ -569,13 +569,13 @@
         const bgPhoto = document.getElementById('bg-photo');
         let client = null;
 
-        // Radio streaming URLs with fallbacks
+        // Radio streaming URLs with fallbacks (browser-compatible)
         const RADIO_STREAMS = [
-            "https://ice1.somafm.com/groovesalad-256-mp3",
-            "https://stream.live.vc.bbcmedia.co.uk/bbc_radio_one",
-            "https://ice2.somafm.com/dronezone-256-mp3",
-            "https://ice4.somafm.com/lush-128-mp3",
-            "https://streams.ilovemusic.de/iloveradio1.mp3"
+            "https://stream.zeno.fm/0r0xa792kwzuv",
+            "https://stream.zeno.fm/f3wvbbqmdg8uv", 
+            "https://stream.zeno.fm/dg9u758fp68uv",
+            "https://radio.garden/api/ara/content/listen/rVgpPQbN/channel.mp3",
+            "https://stream.rcast.net/70643"
         ];
         let currentStreamIndex = 0;
         let isPlaying = false;
@@ -878,12 +878,12 @@
         }
 
         function getStreamName(url) {
-            if (url.includes('somafm.com/groovesalad')) return 'SOMA FM - GROOVE SALAD';
-            if (url.includes('bbc')) return 'BBC RADIO ONE';
-            if (url.includes('dronezone')) return 'SOMA FM - DRONE ZONE';
-            if (url.includes('lush')) return 'SOMA FM - LUSH';
-            if (url.includes('iloveradio')) return 'I LOVE RADIO';
-            return 'INTERNET RADIO';
+            if (url.includes('zeno.fm/0r0xa792kwzuv')) return 'CHILL RADIO';
+            if (url.includes('zeno.fm/f3wvbbqmdg8uv')) return 'ELECTRONIC BEATS';
+            if (url.includes('zeno.fm/dg9u758fp68uv')) return 'AMBIENT SOUNDS';
+            if (url.includes('radio.garden')) return 'RADIO GARDEN';
+            if (url.includes('rcast.net')) return 'INTERNET RADIO';
+            return 'LIVE STREAM';
         }
 
         radioPlayer.addEventListener('error', (e) => {
