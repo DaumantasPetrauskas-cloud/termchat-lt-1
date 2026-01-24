@@ -37,7 +37,7 @@ SVARBU: Kai gauni matematikos uždavinį, PRIVALAI:
 Pavyzdys: "45628+63524 = 109152"
 
 Atsakyk lietuvių arba anglų kalba, priklausomai nuo vartotojo kalbos. Būk tikslus, naudingas ir draugiškas."""
-client = ZhipuAI(api_key=ZHIPU_API_KEY) if ZHIPU_API_KEY else None
+zhipu_client = ZhipuAI(api_key=ZHIPU_API_KEY) if ZHIPU_API_KEY else None
 
 # Global conversation history with size limit
 conversation_history = []
@@ -119,7 +119,7 @@ def on_message(mqtt_client, userdata, message):
 
         try:
             # Check if AI client is available
-            if not client:
+            if not zhipu_client:
                 print("[ERROR] AI client not initialized - missing API key")
                 error_payload = json.dumps({
                     "type": "chat",
@@ -131,7 +131,7 @@ def on_message(mqtt_client, userdata, message):
                 
             print(f"[AI] Thinking with {MODEL_NAME}...")
             
-            response = client.chat.completions.create(
+            response = zhipu_client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=messages_to_send,
                 temperature=0.8,
@@ -185,7 +185,7 @@ if __name__ == '__main__':
     http_thread.start()
 
     # Initialize MQTT Client
-    mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
+    mqtt_client = mqtt.Client()
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
 
