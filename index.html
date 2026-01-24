@@ -677,6 +677,12 @@
                             return; // Stop processing
                         }
                         
+                        // --- AI FUNCTION CALLS ---
+                        if (data.action) {
+                            handleAIAction(data);
+                            return; // Stop processing
+                        }
+                        
                     } catch (e) {
                         // It's text, not JSON. Continue to text chat logic.
                     }
@@ -714,10 +720,16 @@
                     addMessage('SYSTEM', 'Voice synthesis enabled');
                     input.value = '';
                     return;
+                } else if (text === '/voice') {
+                    startVoiceInput();
+                    input.value = '';
+                    return;
                 } else if (text.toLowerCase().includes('create app') || text.toLowerCase().includes('make app')) {
                     // Will trigger AI to create app
                 } else if (text.toLowerCase().includes('start game') || text.toLowerCase().includes('play game')) {
                     // Will trigger AI to create game
+                } else if (text.toLowerCase().includes('play music') || text.toLowerCase().includes('play radio')) {
+                    // Will trigger AI function calling for music
                 } else if (text.startsWith('![') && text.includes(']')) {
                     // Image generation request
                     addMessage(username, text);
@@ -776,7 +788,64 @@
             }
         }
 
-        // --- TERMAI FUNCTIONS (Priority 3) ---
+        // --- VOICE TO VOICE (DUPLEX) ---
+        let isListening = false;
+        let recognition = null;
+        
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+            
+            recognition.onresult = function(event) {
+                const transcript = event.results[0][0].transcript;
+                document.getElementById('chatInput').value = transcript;
+                addMessage('VOICE', `Heard: "${transcript}"`);
+                // Auto-send voice input
+                setTimeout(() => sendMessage(), 500);
+            };
+            
+            recognition.onerror = function(event) {
+                addMessage('ERROR', `Voice recognition error: ${event.error}`);
+                isListening = false;
+                updateVoiceIndicator();
+            };
+            
+            recognition.onend = function() {
+                isListening = false;
+                updateVoiceIndicator();
+            };
+        }
+        
+        function startVoiceInput() {
+            if (recognition && !isListening) {
+                isListening = true;
+                recognition.start();
+                updateVoiceIndicator();
+                addMessage('SYSTEM', 'Listening... Speak now!');
+            }
+        }
+        
+        function stopVoiceInput() {
+            if (recognition && isListening) {
+                recognition.stop();
+                isListening = false;
+                updateVoiceIndicator();
+            }
+        }
+        
+        function updateVoiceIndicator() {
+            const indicator = document.getElementById('voice-indicator');
+            if (isListening) {
+                indicator.textContent = '🎤 Listening...';
+                indicator.classList.add('active');
+            } else {
+                indicator.textContent = '🔊 Speaking...';
+                indicator.classList.remove('active');
+            }
+        }
         
         // Voice Synthesis API
         function speakText(text, lang = 'en-US') {
@@ -809,6 +878,36 @@
                 return `[🎨 Generating image: ${description}...]`;
             });
         }
+        // Enhanced AI Action Handler
+        function handleAIAction(action) {
+            if (action.action === 'play_music') {
+                playMusic(action.url, action.title);
+            } else if (action.action === 'open_panel') {
+                switchMode(action.panel, action.data);
+            } else if (action.action === 'memory_stored') {
+                addMessage('SYSTEM', action.message);
+            }
+        }
+        
+        function playMusic(url, title) {
+            // Create or update audio element
+            let audio = document.getElementById('background-audio');
+            if (!audio) {
+                audio = document.createElement('audio');
+                audio.id = 'background-audio';
+                audio.controls = true;
+                audio.style.cssText = 'position:fixed; bottom:10px; right:10px; z-index:1001;';
+                document.body.appendChild(audio);
+            }
+            
+            audio.src = url;
+            audio.play().then(() => {
+                addMessage('SYSTEM', `🎵 Now playing: ${title}`);
+            }).catch(err => {
+                addMessage('ERROR', `Failed to play music: ${err.message}`);
+            });
+        }
+        
         function acceptTunnel(data) {
             const modal = document.createElement('div');
             modal.style.cssText = `

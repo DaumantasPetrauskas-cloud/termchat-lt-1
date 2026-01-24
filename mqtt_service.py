@@ -20,6 +20,16 @@ except ImportError:
     MONGODB_AVAILABLE = False
     print("[WARNING] MongoDB not available - using memory storage")
 
+# Vector database imports
+try:
+    import chromadb
+    import numpy as np
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    VECTOR_DB_AVAILABLE = True
+except ImportError:
+    VECTOR_DB_AVAILABLE = False
+    print("[WARNING] Vector database not available - no memory bank")
+
 # Render compatibility
 if 'RENDER' in os.environ:
     print("[RENDER] Running on Render platform")
@@ -49,6 +59,9 @@ PORT = int(os.getenv("PORT", 10000))
 
 # Database setup
 db = None
+vector_db = None
+vectorizer = None
+
 if MONGODB_AVAILABLE and MONGODB_URI:
     try:
         mongo_client = MongoClient(MONGODB_URI)
@@ -59,6 +72,17 @@ if MONGODB_AVAILABLE and MONGODB_URI:
         db = None
 else:
     print("[DATABASE] Using memory storage (messages will not persist)")
+
+# Vector database setup for memory bank
+if VECTOR_DB_AVAILABLE:
+    try:
+        chroma_client = chromadb.Client()
+        vector_db = chroma_client.get_or_create_collection(name="termai_memory")
+        vectorizer = TfidfVectorizer(max_features=1000, stop_words='english')
+        print("[MEMORY] Vector database initialized")
+    except Exception as e:
+        print(f"[MEMORY] Vector database failed: {e}")
+        vector_db = None
 
 # Render uses PORT environment variable
 if 'RENDER' in os.environ:
@@ -111,8 +135,105 @@ ROOM_PROMPTS = {
     "think_tank": """You are AI Strategist. Solve problems, generate ideas, plan projects. Analyze and suggest solutions. IMPORTANT: Respond in the same language as the user's message."""
 }
 
+# AI Tools/Functions for Agentic Behavior
+AI_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "play_music",
+            "description": "Play music or radio in the terminal",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "Music/radio URL"},
+                    "title": {"type": "string", "description": "Track/station name"}
+                },
+                "required": ["url", "title"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_panel",
+            "description": "Open a specific panel (app, game, video, admin)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "panel": {"type": "string", "enum": ["app", "game", "video", "admin"]},
+                    "data": {"type": "object", "description": "Panel-specific data"}
+                },
+                "required": ["panel"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remember_user_preference",
+            "description": "Store user preference in memory bank",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {"type": "string", "description": "Preference category"},
+                    "preference": {"type": "string", "description": "User preference"}
+                },
+                "required": ["category", "preference"]
+            }
+        }
+    }
+def execute_ai_function(function_name, arguments, user_id):
+    """Execute AI function calls"""
+    try:
+        if function_name == "play_music":
+            return {
+                "action": "play_music",
+                "url": arguments.get("url"),
+                "title": arguments.get("title")
+            }
+        elif function_name == "open_panel":
+            return {
+                "action": "open_panel",
+                "panel": arguments.get("panel"),
+                "data": arguments.get("data", {})
+            }
+        elif function_name == "remember_user_preference":
+            store_user_memory(user_id, arguments.get("category"), arguments.get("preference"))
+            return {"action": "memory_stored", "message": "Preference saved!"}
+        else:
+            return {"action": "error", "message": f"Unknown function: {function_name}"}
+    except Exception as e:
+        return {"action": "error", "message": f"Function error: {str(e)}"}
+
+def store_user_memory(user_id, category, preference):
+    """Store user preference in vector database"""
+    if vector_db and vectorizer:
+        try:
+            memory_text = f"{category}: {preference}"
+            vector_db.add(
+                documents=[memory_text],
+                metadatas=[{"user_id": user_id, "category": category, "timestamp": time.time()}],
+                ids=[f"{user_id}_{category}_{int(time.time())}"]
+            )
+            print(f"[MEMORY] Stored preference for {user_id}: {category} = {preference}")
+        except Exception as e:
+            print(f"[MEMORY] Failed to store: {e}")
+
+def retrieve_user_memories(user_id, query, limit=3):
+    """Retrieve relevant user memories"""
+    if vector_db:
+        try:
+            results = vector_db.query(
+                query_texts=[query],
+                where={"user_id": user_id},
+                n_results=limit
+            )
+            return results.get('documents', [[]])[0]
+        except Exception as e:
+            print(f"[MEMORY] Failed to retrieve: {e}")
+    return []
+
 def save_message_to_db(room, user_id, message_text, msg_type="chat"):
-    """Save message to database with fallback to memory"""
     message_doc = {
         "room": room,
         "user_id": user_id,
@@ -143,17 +264,40 @@ def get_recent_messages(room, limit=50):
         except Exception as e:
             print(f"[DATABASE] Failed to get messages: {e}")
     return []
-    """AI API call with room context"""
+def ai_call(messages, room):
+    """AI API call with room context and function calling"""
     if not zhipu_client:
         return get_fallback_response(messages)
     
     try:
+        # Enhanced AI call with function calling support
         response = zhipu_client.chat.completions.create(
             model="glm-4-flash",
             messages=messages,
+            tools=AI_TOOLS,
             temperature=0.7,
             max_tokens=300
         )
+        
+        # Check if AI wants to call a function
+        if response.choices[0].message.tool_calls:
+            tool_call = response.choices[0].message.tool_calls[0]
+            function_name = tool_call.function.name
+            arguments = json.loads(tool_call.function.arguments)
+            
+            # Extract user_id from messages
+            user_id = "unknown"
+            for msg in reversed(messages):
+                if msg.get('role') == 'user' and ':' in msg.get('content', ''):
+                    user_id = msg['content'].split(':')[0]
+                    break
+            
+            # Execute the function
+            function_result = execute_ai_function(function_name, arguments, user_id)
+            
+            # Return function result as action
+            return json.dumps(function_result)
+        
         return response.choices[0].message.content
     except Exception as e:
         print(f"[AI ERROR] {e}")
