@@ -51,7 +51,7 @@ def ai_call(messages, room):
     
     try:
         response = zhipu_client.chat.completions.create(
-            model="glm-4-plus",
+            model="glm-4-flash",
             messages=messages,
             temperature=0.8,
             max_tokens=500
