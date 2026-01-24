@@ -291,6 +291,60 @@
         let gameData = null;
         let messageHistory = [];
         let isOnline = navigator.onLine;
+        let userStats = {
+            level: 1,
+            xp: 0,
+            linesOfCode: 0,
+            questsCompleted: 0,
+            avatar: 'default'
+        };
+        let roomId = null;
+
+        // ASCII Avatars
+        const AVATARS = {
+            'default': `
+  o_o
+  /|\\
+  / \\
+`,
+            'admin': `
+ ♔♔♔
+  o_o
+  /|\\
+  / \\
+`,
+            'hacker': `
+ /\\_/\\
+( o.o )
+ =^.^=
+`,
+            'wizard': `
+   /\\
+  /  \\
+  \\__/
+  o_o
+  /|\\
+`,
+            'robot': `
+ [===]
+  o_o
+  /|\\
+  / \\
+`,
+            'ninja': `
+   ◢◤
+  o_o
+  /|\\
+  / \\
+`
+        };
+
+        // Level system
+        const LEVEL_THRESHOLDS = [0, 100, 300, 600, 1000, 1500, 2100, 2800, 3600, 4500, 5500];
+        const LEVEL_TITLES = [
+            'Newbie', 'Apprentice', 'Coder', 'Hacker', 'Architect', 
+            'Wizard', 'Master', 'Guru', 'Legend', 'Arch-Mage'
+        ];
 
         // PWA Service Worker Registration
         if ('serviceWorker' in navigator) {
@@ -379,13 +433,88 @@
 
         // Boot sequence
         document.addEventListener('DOMContentLoaded', function() {
+            // Check for room sharing URL
+            const urlParams = new URLSearchParams(window.location.search);
+            roomId = urlParams.get('room');
+            
+            if (roomId) {
+                addMessage('SYSTEM', `Joining shared room: ${roomId}`);
+            }
+            
+            // Load user stats
+            loadUserStats();
+            
             document.getElementById('usernameInput').focus();
             document.getElementById('usernameInput').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') login();
             });
         });
 
-        function login() {
+        // --- USER STATS & GAMIFICATION ---
+        function loadUserStats() {
+            try {
+                const saved = localStorage.getItem('termchat_stats');
+                if (saved) {
+                    userStats = {...userStats, ...JSON.parse(saved)};
+                }
+            } catch (e) {
+                console.warn('Failed to load user stats:', e);
+            }
+        }
+        
+        function saveUserStats() {
+            try {
+                localStorage.setItem('termchat_stats', JSON.stringify(userStats));
+            } catch (e) {
+                console.warn('Failed to save user stats:', e);
+            }
+        }
+        
+        function addXP(amount, reason) {
+            userStats.xp += amount;
+            const oldLevel = userStats.level;
+            userStats.level = calculateLevel(userStats.xp);
+            
+            if (userStats.level > oldLevel) {
+                addMessage('ACHIEVEMENT', `🎉 Level up! You are now ${LEVEL_TITLES[userStats.level - 1]} (Level ${userStats.level})`);
+                unlockAvatar();
+            }
+            
+            addMessage('XP', `+${amount} XP (${reason})`);
+            saveUserStats();
+            updateUserDisplay();
+        }
+        
+        function calculateLevel(xp) {
+            for (let i = LEVEL_THRESHOLDS.length - 1; i >= 0; i--) {
+                if (xp >= LEVEL_THRESHOLDS[i]) {
+                    return i + 1;
+                }
+            }
+            return 1;
+        }
+        
+        function unlockAvatar() {
+            const level = userStats.level;
+            if (level >= 3 && userStats.avatar === 'default') {
+                userStats.avatar = 'hacker';
+                addMessage('ACHIEVEMENT', '🎭 New avatar unlocked: Hacker!');
+            } else if (level >= 5) {
+                userStats.avatar = 'wizard';
+                addMessage('ACHIEVEMENT', '🧙 New avatar unlocked: Wizard!');
+            } else if (level >= 8) {
+                userStats.avatar = 'ninja';
+                addMessage('ACHIEVEMENT', '🥷 New avatar unlocked: Ninja!');
+            }
+        }
+        
+        function updateUserDisplay() {
+            const header = document.getElementById('room-header');
+            if (header) {
+                const levelTitle = LEVEL_TITLES[userStats.level - 1] || 'Unknown';
+                header.innerHTML = `TERMCHAT LT - ${currentRoom.toUpperCase()} | ${username} (Lvl ${userStats.level} ${levelTitle})<span class="cursor"></span>`;
+            }
+        }
             const input = document.getElementById('usernameInput');
             const user = input.value.trim();
             if (user.length >= 3) {
@@ -448,6 +577,11 @@
                 <div id="preview-frame" style="display:none; width:100%; height:400px; background:#fff;"></div>
             `;
             appData = data;
+            
+            // Award XP for app creation
+            addXP(50, 'Creating app');
+            userStats.linesOfCode += (data.content || '').split('\n').length;
+            saveUserStats();
         }
 
         function showFile(filename) {
@@ -482,6 +616,11 @@
                 </div>
             `;
             gameData = data;
+            
+            // Award XP for game activities
+            addXP(30, 'Starting game');
+            userStats.questsCompleted += 1;
+            saveUserStats();
         }
 
         function sendGameAction(action) {
@@ -574,12 +713,16 @@
                 const connectOptions = {
                     onSuccess: function() {
                         addMessage('SYSTEM', 'Connected to TermOS LT Multiverse!');
-                        // Subscribe to all channels
-                        mqttClient.subscribe('termchat/messages');
-                        mqttClient.subscribe('termchat/output');
-                        mqttClient.subscribe('termchat/admin');
-                        mqttClient.subscribe('termchat/tunnel/+');
-                        mqttClient.subscribe('termchat/webrtc/+');
+                        
+                        // Subscribe to channels (including room-specific if shared)
+                        const topics = ['termchat/messages', 'termchat/output', 'termchat/admin', 'termchat/tunnel/+', 'termchat/webrtc/+'];
+                        
+                        if (roomId) {
+                            topics.push(`termchat/room/${roomId}`);
+                            addMessage('SYSTEM', `Joined shared room: ${roomId}`);
+                        }
+                        
+                        topics.forEach(topic => mqttClient.subscribe(topic));
                         
                         // Send connection announcement
                         const connectMsg = {
@@ -587,7 +730,9 @@
                             text: `${username} joined the multiverse`,
                             timestamp: Date.now()
                         };
-                        mqttClient.publish('termchat/messages', JSON.stringify(connectMsg));
+                        
+                        const publishTopic = roomId ? `termchat/room/${roomId}` : 'termchat/messages';
+                        mqttClient.publish(publishTopic, JSON.stringify(connectMsg));
                     },
                     onFailure: function(error) {
                         addMessage('ERROR', `Connection failed: ${error.errorMessage || 'Unknown error'}`);
@@ -711,7 +856,19 @@
             const text = input.value.trim();
             if (text && mqttClient) {
                 // Check for special commands
-                if (text === '/mute') {
+                if (text === '/share') {
+                    shareRoom();
+                    input.value = '';
+                    return;
+                } else if (text === '/stats') {
+                    showStats();
+                    input.value = '';
+                    return;
+                } else if (text === '/avatar') {
+                    showAvatarMenu();
+                    input.value = '';
+                    return;
+                } else if (text === '/mute') {
                     speechSynthesis.cancel();
                     addMessage('SYSTEM', 'Voice synthesis muted');
                     input.value = '';
@@ -725,9 +882,9 @@
                     input.value = '';
                     return;
                 } else if (text.toLowerCase().includes('create app') || text.toLowerCase().includes('make app')) {
-                    // Will trigger AI to create app
+                    // Will trigger AI to create app and award XP
                 } else if (text.toLowerCase().includes('start game') || text.toLowerCase().includes('play game')) {
-                    // Will trigger AI to create game
+                    // Will trigger AI to create game and award XP
                 } else if (text.toLowerCase().includes('play music') || text.toLowerCase().includes('play radio')) {
                     // Will trigger AI function calling for music
                 } else if (text.startsWith('![') && text.includes(']')) {
@@ -753,7 +910,8 @@
                     timestamp: Date.now()
                 };
                 
-                mqttClient.publish('termchat/messages', JSON.stringify({user: username, text: text}));
+                const publishTopic = roomId ? `termchat/room/${roomId}` : 'termchat/messages';
+                mqttClient.publish(publishTopic, JSON.stringify({user: username, text: text}));
                 mqttClient.publish('termchat/input', JSON.stringify(msg));
                 input.value = '';
             }
@@ -767,6 +925,8 @@
             // Color coding
             if (user === 'SYSTEM') div.style.color = '#00ff00';
             else if (user === 'ERROR') div.style.color = '#ff0000';
+            else if (user === 'ACHIEVEMENT') div.style.color = '#ffff00';
+            else if (user === 'XP') div.style.color = '#00ffff';
             else if (user === 'TERMAI') {
                 div.style.color = '#00ff41';
                 // Auto-speak TERMAI responses
@@ -778,13 +938,28 @@
             
             // Process image markdown
             const processedText = processImageMarkdown(text);
-            div.textContent = `[${user}] ${processedText}`;
+            
+            // Add avatar for regular users
+            let displayText;
+            if (user !== 'SYSTEM' && user !== 'ERROR' && user !== 'ACHIEVEMENT' && user !== 'XP') {
+                const avatar = AVATARS[userStats.avatar] || AVATARS['default'];
+                displayText = `${avatar}[${user}] ${processedText}`;
+            } else {
+                displayText = `[${user}] ${processedText}`;
+            }
+            
+            div.textContent = displayText;
             terminal.appendChild(div);
             terminal.scrollTop = terminal.scrollHeight;
             
             // Save to persistent storage (except system messages)
             if (user !== 'SYSTEM' && user !== 'ERROR') {
                 saveMessageToLocal(user, processedText);
+            }
+            
+            // Award XP for various activities
+            if (user === username) {
+                addXP(1, 'Sending message');
             }
         }
 
@@ -878,14 +1053,66 @@
                 return `[🎨 Generating image: ${description}...]`;
             });
         }
-        // Enhanced AI Action Handler
+        // --- VIRAL GROWTH FEATURES ---
+        function shareRoom() {
+            const roomCode = Math.random().toString(36).substr(2, 8).toUpperCase();
+            const shareUrl = `${window.location.origin}${window.location.pathname}?room=${roomCode}`;
+            
+            // Copy to clipboard
+            navigator.clipboard.writeText(shareUrl).then(() => {
+                addMessage('SYSTEM', `🔗 Room link copied! Share: ${shareUrl}`);
+                addXP(25, 'Creating shareable room');
+            }).catch(() => {
+                addMessage('SYSTEM', `🔗 Share this room: ${shareUrl}`);
+            });
+            
+            // Switch to the new room
+            roomId = roomCode;
+            if (mqttClient) {
+                mqttClient.subscribe(`termchat/room/${roomId}`);
+            }
+        }
+        
+        function showStats() {
+            const levelTitle = LEVEL_TITLES[userStats.level - 1] || 'Unknown';
+            const nextLevelXP = LEVEL_THRESHOLDS[userStats.level] || 'MAX';
+            
+            addMessage('STATS', `🏆 Your Stats:`);
+            addMessage('STATS', `Level: ${userStats.level} (${levelTitle})`);
+            addMessage('STATS', `XP: ${userStats.xp}/${nextLevelXP}`);
+            addMessage('STATS', `Lines of Code: ${userStats.linesOfCode}`);
+            addMessage('STATS', `Quests Completed: ${userStats.questsCompleted}`);
+            addMessage('STATS', `Avatar: ${userStats.avatar}`);
+        }
+        
+        function showAvatarMenu() {
+            addMessage('AVATAR', '🎭 Available Avatars:');
+            Object.keys(AVATARS).forEach(key => {
+                const unlocked = (key === 'default') || 
+                                (key === 'hacker' && userStats.level >= 3) ||
+                                (key === 'wizard' && userStats.level >= 5) ||
+                                (key === 'ninja' && userStats.level >= 8) ||
+                                (key === 'admin' && userStats.level >= 10);
+                
+                const status = unlocked ? '✅' : '🔒';
+                addMessage('AVATAR', `${status} ${key} ${unlocked ? '(type /use ' + key + ')' : '(unlock at level ' + getUnlockLevel(key) + ')'}`);
+            });
+        }
+        
+        function getUnlockLevel(avatar) {
+            const levels = {'default': 1, 'hacker': 3, 'wizard': 5, 'ninja': 8, 'admin': 10};
+            return levels[avatar] || 1;
+        }
         function handleAIAction(action) {
             if (action.action === 'play_music') {
                 playMusic(action.url, action.title);
+                addXP(15, 'Playing music');
             } else if (action.action === 'open_panel') {
                 switchMode(action.panel, action.data);
+                addXP(10, 'Opening panel');
             } else if (action.action === 'memory_stored') {
                 addMessage('SYSTEM', action.message);
+                addXP(5, 'Storing memory');
             }
         }
         
