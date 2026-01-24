@@ -239,57 +239,57 @@ def on_message(client, userdata, message, properties=None):
             
         messages_to_send = [sys_msg] + conv_history[-10:]
         
-            # Enhanced error handling and logging
+        # Enhanced error handling and logging
+        try:
+            reply = ai_call(messages_to_send, current_room)
+            
+            # Validate AI response
+            if not reply or len(reply) > 1000:
+                reply = "AI response error or too long"
+            
+            # Check if response is JSON (for apps/games)
             try:
-                reply = ai_call(messages_to_send, current_room)
-                
-                # Validate AI response
-                if not reply or len(reply) > 1000:
-                    reply = "AI response error or too long"
-                
-                # Check if response is JSON (for apps/games)
-                try:
-                    json_response = json.loads(reply)
-                    if json_response.get("type") in ["app", "game"]:
-                        # Send as special JSON message
-                        client.publish("termchat/output", json.dumps({
-                            "type": "creation",
-                            "id": "TERMAI",
-                            "msg": "Sukūriau jums:",
-                            "creation": json_response
-                        }))
-                        conv_history.append({"role": "assistant", "content": reply})
-                        return
-                except json.JSONDecodeError:
-                    pass  # Not JSON, send as regular message
-                
-                # Sanitize AI response
-                reply = str(reply).replace('<', '&lt;').replace('>', '&gt;')[:500]
-                
-                client.publish("termchat/output", json.dumps({
-                    "type": "chat",
-                    "id": "TERMAI", 
-                    "msg": reply
-                }))
-                # Also publish to messages topic for compatibility
-                client.publish("termchat/messages", json.dumps({
-                    "user": "TERMAI",
-                    "text": reply
-                }))
-                conv_history.append({"role": "assistant", "content": reply})
-                
-            except Exception as e:
-                error_msg = f"AI Error: {str(e)[:100]}"
-                print(f"[ERROR] AI Failed: {e}")
-                client.publish("termchat/output", json.dumps({
-                    "type": "chat",
-                    "id": "TERMAI",
-                    "msg": error_msg
-                }))
-                client.publish("termchat/messages", json.dumps({
-                    "user": "TERMAI",
-                    "text": error_msg
-                }))
+                json_response = json.loads(reply)
+                if json_response.get("type") in ["app", "game"]:
+                    # Send as special JSON message
+                    client.publish("termchat/output", json.dumps({
+                        "type": "creation",
+                        "id": "TERMAI",
+                        "msg": "Sukūriau jums:",
+                        "creation": json_response
+                    }))
+                    conv_history.append({"role": "assistant", "content": reply})
+                    return
+            except json.JSONDecodeError:
+                pass  # Not JSON, send as regular message
+            
+            # Sanitize AI response
+            reply = str(reply).replace('<', '&lt;').replace('>', '&gt;')[:500]
+            
+            client.publish("termchat/output", json.dumps({
+                "type": "chat",
+                "id": "TERMAI", 
+                "msg": reply
+            }))
+            # Also publish to messages topic for compatibility
+            client.publish("termchat/messages", json.dumps({
+                "user": "TERMAI",
+                "text": reply
+            }))
+            conv_history.append({"role": "assistant", "content": reply})
+            
+        except Exception as e:
+            error_msg = f"AI Error: {str(e)[:100]}"
+            print(f"[ERROR] AI Failed: {e}")
+            client.publish("termchat/output", json.dumps({
+                "type": "chat",
+                "id": "TERMAI",
+                "msg": error_msg
+            }))
+            client.publish("termchat/messages", json.dumps({
+                "user": "TERMAI",
+                "text": error_msg
+            }))
 
 def run_http_server():
     """HTTP server for health checks"""
