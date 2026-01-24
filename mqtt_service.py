@@ -2,118 +2,196 @@ import paho.mqtt.client as mqtt
 import json
 import os
 from dotenv import load_dotenv
-from backend import get_ai_response
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import socket
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from zhipuai import ZhipuAI
 
 # Load Config
 load_dotenv()
-MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.emqx.io")
-MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
-MQTT_TOPIC = "term-chat/global/v3"
-AI_USER_ID = os.getenv("AI_USER_ID", "TERMAI")
+ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
+AI_PROVIDER = os.getenv("AI_PROVIDER", "zhipu")
 PORT = int(os.getenv("PORT", 10000))
 
-# GLOBAL CONVERSATION MEMORY
+# Debug environment variables (masked for security)
+print(f"ZHIPU_API_KEY Found: {bool(ZHIPU_API_KEY)}")
+print(f"AI_PROVIDER: {AI_PROVIDER}")
+
+# AI Configuration
+MODEL_NAME = "glm-4"
+SYSTEM_PROMPT = """Tu esi TermAi, pažangus AI asistentas, paremtas Zhipu GLM-4 technologija. 
+
+Tavo galimybės:
+- Programavimas: Python, JavaScript, HTML/CSS, SQL, ir kitos kalbos
+- Matematika ir skaičiavimai: VISADA atlik tikrus skaičiavimus, ne tik aprašyk
+- Teksto analizė ir vertimas
+- Kūrybinis rašymas ir idėjų generavimas
+- Problemų sprendimas ir loginis mąstymas
+- Duomenų analizė ir vizualizacija
+- Technologijų konsultacijos
+
+SVARBU: Kai gauni matematikos uždavinį, PRIVALAI:
+1. Atlikti tikrą skaičiavimą
+2. Pateikti teisingą atsakymą
+3. Parodyti skaičiavimo procesą
+
+Pavyzdys: "45628+63524 = 109152"
+
+Atsakyk lietuvių arba anglų kalba, priklausomai nuo vartotojo kalbos. Būk tikslus, naudingas ir draugiškas."""
+client = ZhipuAI(api_key=ZHIPU_API_KEY) if ZHIPU_API_KEY else None
+
+# Global conversation history with size limit
 conversation_history = []
-SYSTEM_INSTRUCTION = {
-    "role": "system",
-    "content": "You are TERMAI, a friendly AI assistant in TermChat LT, a Lithuanian terminal chat room. You speak both Lithuanian and English. Remember previous conversations and be helpful and conversational."
-}
+MAX_CONVERSATION_HISTORY = 50
 
-print(f"🚀 Starting TermChat AI Bot on port {PORT}")
-
-# HTTP Server for Render
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-        status = {"status": "AI Bot Running", "ai_id": AI_USER_ID}
-        self.wfile.write(json.dumps(status).encode())
-    
-    def log_message(self, format, *args):
-        pass
-
-def on_connect(client, userdata, flags, reason_code, properties):
+def on_connect(client, userdata, flags, reason_code):
     if reason_code == 0:
         print("✅ MQTT Connected!")
-        client.subscribe(MQTT_TOPIC)
-        # Announce AI presence
-        join_msg = json.dumps({"type": "join", "id": AI_USER_ID})
-        client.publish(MQTT_TOPIC, join_msg)
-        print(f"🤖 {AI_USER_ID} is now online!")
+        client.subscribe("term-chat/global/v3")
     else:
         print(f"❌ MQTT Failed: {reason_code}")
 
-def on_message(client, userdata, msg, properties):
+import re
+
+def calculate_math(text):
+    """Simple calculator for basic math operations"""
+    # Look for simple math expressions like "45628+63524" or "45628 + 63524"
+    math_pattern = r'(\d+)\s*([+\-*/])\s*(\d+)'
+    match = re.search(math_pattern, text)
+    
+    if match:
+        num1, operator, num2 = match.groups()
+        num1, num2 = int(num1), int(num2)
+        
+        if operator == '+':
+            return f"{num1} + {num2} = {num1 + num2}"
+        elif operator == '-':
+            return f"{num1} - {num2} = {num1 - num2}"
+        elif operator == '*':
+            return f"{num1} * {num2} = {num1 * num2}"
+        elif operator == '/':
+            if num2 != 0:
+                return f"{num1} / {num2} = {num1 / num2}"
+            else:
+                return "Negalima dalinti iš nulio / Cannot divide by zero"
+    return None
+
+def on_message(mqtt_client, userdata, message):
     global conversation_history
     
     try:
-        payload = json.loads(msg.payload.decode())
-        
-        if payload.get("type") == "chat" and payload.get("id") != AI_USER_ID:
-            user_message = payload.get("msg", "")
-            sender_id = payload.get("id", "unknown")
+        payload = json.loads(message.payload.decode())
+        if payload.get("type") != "chat" or payload.get("id") == "TERMAI":
+            return
             
-            # Respond to questions or AI mentions
-            if ("?" in user_message or 
-                "ai" in user_message.lower() or 
-                "termai" in user_message.lower()):
-                
-                print(f"💬 {sender_id}: {user_message}")
-                
-                # Add user message to history
-                conversation_history.append({"role": "user", "content": f"{sender_id}: {user_message}"})
-                
-                # Prepare messages (system + last 10 messages)
-                messages_to_send = [SYSTEM_INSTRUCTION] + conversation_history[-10:]
-                
-                # Get AI response with conversation context
-                ai_response = get_ai_response(user_message, use_api=False, conversation=messages_to_send)
-                
-                # Add AI response to history
-                conversation_history.append({"role": "assistant", "content": ai_response})
-                
-                # Send response
-                response_payload = json.dumps({
-                    "type": "chat",
-                    "id": AI_USER_ID,
-                    "msg": ai_response
-                })
-                client.publish(MQTT_TOPIC, response_payload)
-                print(f"🤖 AI: {ai_response}")
+        user_text = payload.get("msg", "")
+        sender_id = payload.get("id", "unknown")
+        print(f"[MQTT] Received from {sender_id}: {user_text}")
+
+        # Check for simple math first (only if it's clearly a math expression)
+        math_result = calculate_math(user_text)
+        if math_result and re.search(r'\d+\s*[+\-*/]\s*\d+', user_text):
+            response_payload = json.dumps({
+                "type": "chat",
+                "id": "TERMAI",
+                "msg": math_result
+            })
+            mqtt_client.publish("term-chat/global/v3", response_payload)
+            return
+
+        # Check if user is asking AI
+        triggers = ['ai', 'termai', '?']
+        is_trigger = any(t in user_text.lower() for t in triggers)
+
+        if not is_trigger:
+            return
+
+        # Add User to History with sender ID
+        conversation_history.append({"role": "user", "content": f"{sender_id}: {user_text}"})
         
+        # Limit conversation history to prevent memory leak
+        if len(conversation_history) > MAX_CONVERSATION_HISTORY:
+            conversation_history = conversation_history[-MAX_CONVERSATION_HISTORY:]
+
+        # Keep last 20 messages for better context
+        messages_to_send = [
+            {"role": "system", "content": SYSTEM_PROMPT}
+        ] + conversation_history[-20:]
+
+        try:
+            # Check if AI client is available
+            if not client:
+                print("[ERROR] AI client not initialized - missing API key")
+                error_payload = json.dumps({
+                    "type": "chat",
+                    "id": "TERMAI",
+                    "msg": "AI paslaugos nepasiekiamos. / AI services unavailable."
+                })
+                mqtt_client.publish("term-chat/global/v3", error_payload)
+                return
+                
+            print(f"[AI] Thinking with {MODEL_NAME}...")
+            
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages_to_send,
+                temperature=0.8,
+                max_tokens=300,
+                top_p=0.9
+            )
+
+            ai_reply = response.choices[0].message.content
+            print(f"[AI] Response: {ai_reply}")
+
+            # Add AI to History
+            conversation_history.append({"role": "assistant", "content": ai_reply})
+
+            # Send Reply
+            response_payload = json.dumps({
+                "type": "chat",
+                "id": "TERMAI",
+                "msg": ai_reply
+            })
+            mqtt_client.publish("term-chat/global/v3", response_payload)
+
+        except Exception as e:
+            print(f"[ERROR] AI Call Failed: {e}")
+            error_payload = json.dumps({
+                "type": "chat",
+                "id": "TERMAI",
+                "msg": "Atsiprašau, šiuo metu negaliu atsakyti. / Sorry, I can't respond right now."
+            })
+            mqtt_client.publish("term-chat/global/v3", error_payload)
+            
     except Exception as e:
         print(f"❌ Error: {e}")
 
-def find_free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))
-        return s.getsockname()[1]
+# HTTP Server for Render
+class HealthCheckHandler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        self.wfile.write(b"TermChat-LT AI Service is Running")
 
-def start_mqtt():
-    try:
-        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-        client.on_connect = on_connect
-        client.on_message = on_message
-        client.connect(MQTT_BROKER, MQTT_PORT, 60)
-        client.loop_forever()
-    except Exception as e:
-        print(f"💥 MQTT Error: {e}")
-
-if __name__ == "__main__":
-    # Start MQTT in background
-    mqtt_thread = threading.Thread(target=start_mqtt, daemon=True)
-    mqtt_thread.start()
-    
-    # Find free port if default is taken
-    try:
-        server = HTTPServer(('0.0.0.0', PORT), HealthHandler)
-    except OSError:
-        PORT = find_free_port()
-        server = HTTPServer(('0.0.0.0', PORT), HealthHandler)
-    
-    print(f"🌐 HTTP server running on port {PORT}")
+def run_http_server():
+    server = HTTPServer(('0.0.0.0', PORT), HealthCheckHandler)
+    print(f"[HTTP] Health check running on port {PORT}")
     server.serve_forever()
+
+if __name__ == '__main__':
+    # Start HTTP in background thread
+    http_thread = threading.Thread(target=run_http_server)
+    http_thread.daemon = True
+    http_thread.start()
+
+    # Initialize MQTT Client
+    mqtt_client = mqtt.Client()
+    mqtt_client.on_connect = on_connect
+    mqtt_client.on_message = on_message
+
+    # Connect to MQTT
+    try:
+        mqtt_client.connect("broker.emqx.io", 1883, 60)
+        mqtt_client.loop_forever()
+    except KeyboardInterrupt:
+        mqtt_client.disconnect()

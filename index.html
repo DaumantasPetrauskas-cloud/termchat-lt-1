@@ -6,16 +6,15 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="TermChat">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' https: data:; connect-src 'self' wss: https: ws:; font-src 'self' data:;">
     <title>TermChat LT</title>
 
     <!-- PWA Manifest -->
-    <link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="./manifest.json">
     <meta name="theme-color" content="#00ff00">
 
     <!-- MQTT Library for Real-time Chat -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js" type="text/javascript"></script>
-    <!-- Puter.js AI Library -->
-    <script src="https://js.puter.com/v2/"></script>
 
     <style>
         :root {
@@ -555,6 +554,13 @@
     <audio id="radio-player"></audio>
 
     <script>
+        // XSS Protection - HTML escape function
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         const BROKER_HOST = "broker.emqx.io";
         const BROKER_PORT = 8084;
         const TOPIC = "term-chat/global/v3";
@@ -592,20 +598,6 @@
         const MAX_MESSAGES = 100;
         let reconnectAttempts = 0;
         const MAX_RECONNECT_ATTEMPTS = 5;
-        
-        // AI Configuration
-        const AI_USER_ID = "TERMAI";
-        
-        // Fixed AI function
-        async function getAIResponse(userMessage) {
-            try {
-                const response = await puter.ai.chat(`Tu esi TermAi. Atsakyk lietuviškai: ${userMessage}`);
-                return response || 'Labas!';
-            } catch (error) {
-                console.error('[AI] Error:', error);
-                return 'AI nepasiekiamas';
-            }
-        }
 
         // --- TYPEWRITER EFFECT ---
         function typeWriter(text, element, speed = 30) {
@@ -656,10 +648,26 @@
 
         // --- MQTT LOGIC ---
         function initMQTT() {
-            client = new Paho.MQTT.Client(BROKER_HOST, BROKER_PORT, "web_" + parseInt(Math.random() * 100000, 10));
-            client.onConnectionLost = onConnectionLost;
-            client.onMessageArrived = onMessageArrived;
-            client.connect({ onSuccess: onConnect, useSSL: true, onFailure: onFailure });
+            try {
+                client = new Paho.MQTT.Client(BROKER_HOST, BROKER_PORT, "web_" + parseInt(Math.random() * 100000, 10));
+                client.onConnectionLost = onConnectionLost;
+                client.onMessageArrived = onMessageArrived;
+                
+                // Safari-compatible connection options
+                const connectOptions = {
+                    onSuccess: onConnect,
+                    onFailure: onFailure,
+                    useSSL: true,
+                    timeout: 10,
+                    keepAliveInterval: 30,
+                    cleanSession: true
+                };
+                
+                client.connect(connectOptions);
+            } catch (error) {
+                log("SAFARI KLAIDA: " + error.message, 'error-msg');
+                setTimeout(initMQTT, 5000);
+            }
         }
 
         function onConnect() {
@@ -697,10 +705,14 @@
         function onMessageArrived(message) {
             try {
                 const payload = JSON.parse(message.payloadString);
-                if (!payload || !payload.id || payload.id === userID) return;
+                if (!payload || !payload.id) return;
+
+                // Skip own messages except for chat messages from other users
+                if (payload.id === userID && payload.type !== 'chat') return;
 
                 // Prevent duplicate user notifications
                 if (payload.type === 'join') {
+                    if (payload.id === userID) return; // Skip own join messages
                     if (connectedUsers.has(payload.id)) return;
                     connectedUsers.add(payload.id);
                     
@@ -713,53 +725,28 @@
                     }, 800);
 
                 } else if (payload.type === 'chat') {
-                    // Sanitize message content
-                    const sanitizedMsg = payload.msg ? payload.msg.substring(0, 500) : '';
-                    let msgHTML = `<${payload.id}> ${sanitizedMsg}`;
+                    // Show all chat messages including own messages echoed back
+                    const sanitizedMsg = payload.msg ? escapeHtml(payload.msg.substring(0, 500)) : '';
+                    let msgHTML = `<${escapeHtml(payload.id)}> ${sanitizedMsg}`;
                     if (payload.avatar && payload.avatar.startsWith('data:image/')) {
-                        msgHTML = `<img src="${payload.avatar}" class="user-avatar" alt="${payload.id}"> <${payload.id}> ${sanitizedMsg}`;
+                        msgHTML = `<img src="${payload.avatar}" class="user-avatar" alt="${escapeHtml(payload.id)}"> <${escapeHtml(payload.id)}> ${sanitizedMsg}`;
                     }
-                    log(msgHTML, payload.id === AI_USER_ID ? 'greeting-msg' : 'stranger-msg');
                     
-                    // AI responds to messages mentioning it or questions
-                    if (payload.id !== AI_USER_ID && 
-                        (sanitizedMsg.toLowerCase().includes('ai') || 
-                         sanitizedMsg.toLowerCase().includes('termai') || 
-                         sanitizedMsg.includes('?'))) {
-                        
-                        console.log('[DEBUG] AI trigger detected for:', sanitizedMsg);
-                        
-                        (async () => {
-                            try {
-                                const aiResponse = await getAIResponse(sanitizedMsg);
-                                console.log('[DEBUG] AI response received:', aiResponse);
-                                
-                                if (aiResponse && client && client.isConnected()) {
-                                    const aiMsg = new Paho.MQTT.Message(JSON.stringify({
-                                        type: 'chat',
-                                        id: AI_USER_ID,
-                                        msg: aiResponse
-                                    }));
-                                    aiMsg.destinationName = TOPIC;
-                                    client.send(aiMsg);
-                                    console.log('[DEBUG] AI message sent via MQTT');
-                                } else {
-                                    console.log('[DEBUG] No AI response or client not connected');
-                                }
-                            } catch (error) {
-                                console.error('[DEBUG] AI error:', error);
-                            }
-                        })();
-                    }
+                    // Use different styling for own messages vs others
+                    const messageType = payload.id === userID ? 'system-msg' : 
+                                      payload.id === 'TERMAI' ? 'greeting-msg' : 'stranger-msg';
+                    log(msgHTML, messageType);
                     
                 } else if (payload.type === 'avatar') {
+                    if (payload.id === userID) return; // Skip own avatar updates
                     if (payload.avatar && payload.avatar.startsWith('data:image/')) {
-                        log(`NAUDOTOJAS ${payload.id} ATNAUJINO AVATAR.`, 'system-msg');
+                        log(`NAUDOTOJAS ${escapeHtml(payload.id)} ATNAUJINO AVATAR.`, 'system-msg');
                         localStorage.setItem('userAvatar_' + payload.id, payload.avatar);
                     }
                 } else if (payload.type === 'leave') {
+                    if (payload.id === userID) return; // Skip own leave messages
                     connectedUsers.delete(payload.id);
-                    log(`NAUDOTOJAS ATSIJUNGĖ: ${payload.id}`, 'system-msg');
+                    log(`NAUDOTOJAS ATSIJUNGĖ: ${escapeHtml(payload.id)}`, 'system-msg');
                 }
                 
                 // Limit message history to prevent memory issues
@@ -797,12 +784,6 @@
         function sendMessage() {
             const text = input.value.trim();
             if (text && client && client.isConnected() && text.length <= 500) {
-                let msgHTML = `<${userID}> ${text}`;
-                if (userAvatar) {
-                    msgHTML = `<img src="${userAvatar}" class="user-avatar" alt="${userID}"> <${userID}> ${text}`;
-                }
-                log(msgHTML, 'system-msg');
-                
                 const messageData = {
                     type: 'chat',
                     id: userID,
@@ -917,6 +898,12 @@
         }
 
         function createAvatarFromPhoto(dataUrl) {
+            // Validate data URL format for security
+            if (!dataUrl.startsWith('data:image/')) {
+                log("NETINKAMAS NUOTRAUKOS FORMATAS", 'error-msg');
+                return;
+            }
+            
             // Create a circular avatar from the photo using canvas
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
@@ -925,26 +912,33 @@
 
             const img = new Image();
             img.onload = function() {
-                // Draw circular avatar
-                ctx.beginPath();
-                ctx.arc(100, 100, 100, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.clip();
-                
-                // Calculate dimensions to fill circle
-                const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
-                const x = (canvas.width / 2) - (img.width / 2) * scale;
-                const y = (canvas.height / 2) - (img.height / 2) * scale;
-                
-                ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
-                
-                // Get avatar as data URL
-                userAvatar = canvas.toDataURL('image/png');
-                localStorage.setItem('userAvatar_' + userID, userAvatar);
-                bgPhoto.src = userAvatar;
-                
-                log("AVATAR SUKURTAS IR IŠSAUGOTAS.", 'greeting-msg');
-                flashNotification();
+                try {
+                    // Draw circular avatar
+                    ctx.beginPath();
+                    ctx.arc(100, 100, 100, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.clip();
+                    
+                    // Calculate dimensions to fill circle
+                    const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
+                    const x = (canvas.width / 2) - (img.width / 2) * scale;
+                    const y = (canvas.height / 2) - (img.height / 2) * scale;
+                    
+                    ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+                    
+                    // Get avatar as data URL
+                    userAvatar = canvas.toDataURL('image/png');
+                    localStorage.setItem('userAvatar_' + userID, userAvatar);
+                    bgPhoto.src = userAvatar;
+                    
+                    log("AVATAR SUKURTAS IR IŠSAUGOTAS.", 'greeting-msg');
+                    flashNotification();
+                } catch (e) {
+                    log("KLAIDA KURIANT AVATAR", 'error-msg');
+                }
+            };
+            img.onerror = function() {
+                log("NEPAVYKO ĮKELTI NUOTRAUKOS", 'error-msg');
             };
             img.src = dataUrl;
         }
@@ -956,6 +950,17 @@
         photoUpload.addEventListener('change', function(e) {
             const file = e.target.files[0];
             if (file) {
+                // Validate file type and size
+                if (!file.type.startsWith('image/')) {
+                    log("PASIRINKITE NUOTRAUKĄ (JPG, PNG, GIF)", 'error-msg');
+                    return;
+                }
+                
+                if (file.size > 5 * 1024 * 1024) { // 5MB limit
+                    log("NUOTRAUKA PER DIDELĖ (MAX 5MB)", 'error-msg');
+                    return;
+                }
+                
                 const reader = new FileReader();
                 reader.onload = function(event) {
                     const photoDataUrl = event.target.result;
@@ -963,7 +968,7 @@
                     
                     // Create avatar from photo
                     createAvatarFromPhoto(photoDataUrl);
-                    log("NUOTRAUKA PRIDĖTA: " + file.name, 'system-msg');
+                    log("NUOTRAUKA PRIDĖTA: " + escapeHtml(file.name), 'system-msg');
                     
                     // Send avatar to other users
                     if (client && client.isConnected()) {
@@ -976,6 +981,9 @@
                         client.send(avatarMsg);
                     }
                 };
+                reader.onerror = function() {
+                    log("KLAIDA SKAITANT FAILĄ", 'error-msg');
+                };
                 reader.readAsDataURL(file);
             }
         });
@@ -985,8 +993,15 @@
             const username = document.getElementById('username-input').value.trim().toUpperCase();
             const errorDiv = document.getElementById('login-error');
             
+            // Validate username
             if (username.length < 3 || username.length > 12) {
                 errorDiv.textContent = 'VARDAS TURI BŪTI 3-12 SIMBOLIŲ';
+                return;
+            }
+            
+            // Check for valid characters (alphanumeric only)
+            if (!/^[A-Z0-9]+$/.test(username)) {
+                errorDiv.textContent = 'NAUDOKITE TIK RAIDES IR SKAIČIUS';
                 return;
             }
             
@@ -1001,17 +1016,8 @@
             if (e.key === 'Enter') doLogin();
         });
 
-        // Test AI on page load
+        // Test on page load
         window.onload = function() {
-            setTimeout(async () => {
-                try {
-                    const test = await puter.ai.chat('hello');
-                    console.log('AI Works:', test);
-                } catch (e) {
-                    console.error('AI Failed:', e);
-                }
-            }, 2000);
-            
             document.getElementById('username-input').focus();
         };
 
@@ -1028,7 +1034,7 @@
 
         // --- PWA SERVICE WORKER REGISTRATION ---
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js')
+            navigator.serviceWorker.register('./sw.js')
                 .then(registration => {
                     console.log('Service Worker registered successfully:', registration);
                 })

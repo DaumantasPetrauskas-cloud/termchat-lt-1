@@ -1,91 +1,41 @@
-// Service Worker for TermChat PWA
-const CACHE_NAME = 'termchat-v1';
+const CACHE_NAME = 'termchat-lt-v1';
 const urlsToCache = [
-  '/',
-  '/index.html',
-  '/manifest.json'
+  './',
+  './index.html',
+  './manifest.json',
+  'https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js'
 ];
 
-// Install event - cache files
-self.addEventListener('install', event => {
+self.addEventListener('install', function(event) {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(urlsToCache))
-      .then(() => self.skipWaiting())
+      .then(function(cache) {
+        return cache.addAll(urlsToCache);
+      })
   );
 });
 
-// Activate event - clean up old caches
-self.addEventListener('activate', event => {
+self.addEventListener('fetch', function(event) {
+  event.respondWith(
+    caches.match(event.request)
+      .then(function(response) {
+        // Return cached version or fetch from network
+        return response || fetch(event.request);
+      }
+    )
+  );
+});
+
+self.addEventListener('activate', function(event) {
   event.waitUntil(
-    caches.keys().then(cacheNames => {
+    caches.keys().then(function(cacheNames) {
       return Promise.all(
-        cacheNames.map(cacheName => {
+        cacheNames.map(function(cacheName) {
           if (cacheName !== CACHE_NAME) {
             return caches.delete(cacheName);
           }
         })
       );
-    }).then(() => self.clients.claim())
+    })
   );
-});
-
-// Fetch event - serve from cache, fallback to network
-self.addEventListener('fetch', event => {
-  // Skip non-GET requests
-  if (event.request.method !== 'GET') {
-    return;
-  }
-
-  // Skip radio streams and external APIs
-  if (event.request.url.includes('internet-radio.com') ||
-      event.request.url.includes('broker.emqx.io') ||
-      event.request.url.includes('cdnjs.cloudflare.com')) {
-    return;
-  }
-
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        // Return cached version if available
-        if (response) {
-          return response;
-        }
-
-        return fetch(event.request)
-          .then(response => {
-            // Don't cache non-successful responses
-            if (!response || response.status !== 200 || response.type !== 'basic') {
-              return response;
-            }
-
-            // Clone the response
-            const responseToCache = response.clone();
-
-            caches.open(CACHE_NAME)
-              .then(cache => {
-                cache.put(event.request, responseToCache);
-              });
-
-            return response;
-          })
-          .catch(() => {
-            // Return a fallback offline page if needed
-            return caches.match('/index.html');
-          });
-      })
-  );
-});
-
-// Background sync for offline messages (future feature)
-self.addEventListener('sync', event => {
-  if (event.tag === 'sync-messages') {
-    event.waitUntil(
-      // Sync pending messages when connection restored
-      self.registration.showNotification('TermChat', {
-        body: 'Syncing messages...',
-        tag: 'sync-notification'
-      })
-    );
-  }
 });

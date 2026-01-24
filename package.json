@@ -6,6 +6,8 @@
     "start": "python mqtt_service.py"
   },
   "dependencies": {
-    "mqtt": "^5.0.0"
+    "zhipuai": "^2.1.5",
+    "paho-mqtt": "^2.1.0",
+    "python-dotenv": "^1.0.0"
   }
 }
