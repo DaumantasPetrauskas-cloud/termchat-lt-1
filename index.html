@@ -447,9 +447,9 @@
             // Load user stats
             loadUserStats();
             
-            document.getElementById('usernameInput').focus();
             const usernameInput = document.getElementById('usernameInput');
             if (usernameInput) {
+                usernameInput.focus();
                 usernameInput.addEventListener('keypress', function(e) {
                     if (e.key === 'Enter') login();
                 });
