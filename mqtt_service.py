@@ -185,7 +185,7 @@ if __name__ == '__main__':
     http_thread.start()
 
     # Initialize MQTT Client
-    mqtt_client = mqtt.Client()
+    mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
 
