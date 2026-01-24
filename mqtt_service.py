@@ -18,25 +18,7 @@ print(f"AI_PROVIDER: {AI_PROVIDER}")
 
 # AI Configuration
 MODEL_NAME = "glm-4"
-SYSTEM_PROMPT = """Tu esi TermAi, pažangus AI asistentas, paremtas Zhipu GLM-4 technologija. 
-
-Tavo galimybės:
-- Programavimas: Python, JavaScript, HTML/CSS, SQL, ir kitos kalbos
-- Matematika ir skaičiavimai: VISADA atlik tikrus skaičiavimus, ne tik aprašyk
-- Teksto analizė ir vertimas
-- Kūrybinis rašymas ir idėjų generavimas
-- Problemų sprendimas ir loginis mąstymas
-- Duomenų analizė ir vizualizacija
-- Technologijų konsultacijos
-
-SVARBU: Kai gauni matematikos uždavinį, PRIVALAI:
-1. Atlikti tikrą skaičiavimą
-2. Pateikti teisingą atsakymą
-3. Parodyti skaičiavimo procesą
-
-Pavyzdys: "45628+63524 = 109152"
-
-Atsakyk lietuvių arba anglų kalba, priklausomai nuo vartotojo kalbos. Būk tikslus, naudingas ir draugiškas."""
+SYSTEM_PROMPT = """Tu esi TermAi, draugiškas AI asistentas TermChat LT kambaryje. Atsakyk trumpai ir aiškiai lietuvių kalba."""
 zhipu_client = ZhipuAI(api_key=ZHIPU_API_KEY) if ZHIPU_API_KEY else None
 
 # Global conversation history with size limit
@@ -134,9 +116,8 @@ def on_message(mqtt_client, userdata, message):
             response = zhipu_client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=messages_to_send,
-                temperature=0.8,
-                max_tokens=300,
-                top_p=0.9
+                temperature=0.7,
+                max_tokens=150
             )
 
             ai_reply = response.choices[0].message.content
