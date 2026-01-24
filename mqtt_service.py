@@ -95,9 +95,19 @@ def handle_admin(payload):
     else:
         return f"Unknown command: {cmd}"
 
+def on_disconnect(client, userdata, flags, reason_code, properties=None):
+    print(f"[MQTT] Disconnected. Code: {reason_code}. Reconnecting...")
+    time.sleep(5)
+    try:
+        client.reconnect()
+        print("[MQTT] Reconnected successfully")
+    except Exception as e:
+        print(f"[MQTT] Reconnect failed: {e}. Will retry...")
+
 def on_connect(client, u, flags, rc, p=None):
     print(f"[MQTT] Connected. Code: {rc}")
     client.subscribe("termchat/input")
+    client.subscribe("termchat/messages")
     client.subscribe("termchat/admin")
     client.subscribe("termchat/tunnel/+")
     client.subscribe("termchat/room/+")
@@ -124,8 +134,11 @@ def on_message(client, userdata, message, properties=None):
 
     print(f"[MQTT] {topic}: {user_id} -> {message_text[:50]}...")
 
-    # 2. ADMIN SECURITY CHECK
-    if topic == "termchat/admin":
+    # Handle both termchat/input and termchat/messages topics
+    if topic in ["termchat/input", "termchat/messages"]:
+        # Process the message for AI triggers
+        pass
+    elif topic == "termchat/admin":
         resp = handle_admin(message_text)
         client.publish("termchat/output", json.dumps({
             "type": "admin",
@@ -215,6 +228,11 @@ def on_message(client, userdata, message, properties=None):
                 "id": "TERMAI", 
                 "msg": reply
             }))
+            # Also publish to messages topic for compatibility
+            client.publish("termchat/messages", json.dumps({
+                "user": "TERMAI",
+                "text": reply
+            }))
             conv_history.append({"role": "assistant", "content": reply})
             
         except Exception as e:
@@ -257,6 +275,7 @@ if __name__ == '__main__':
     # Start MQTT client
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
     client.on_message = on_message
     
     try:
