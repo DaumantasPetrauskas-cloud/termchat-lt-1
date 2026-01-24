@@ -670,6 +670,15 @@ def on_message(client, userdata, message, properties=None):
             return
 
     # 5. AI / GAME / APP GENERATION
+    # Check for simple ping test first
+    if message_text.lower().strip() == "test ping":
+        client.publish("termchat/output", json.dumps({
+            "type": "chat",
+            "id": "SYSTEM",
+            "msg": "Pong! Backend is working correctly."
+        }))
+        return
+    
     # Check if AI should respond
     ai_triggers = ["ai", "termai", "?"]
     should_respond = any(trigger in text_lower for trigger in ai_triggers)

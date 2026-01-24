@@ -901,6 +901,7 @@
                         msgDiv.textContent = payload; // SECURE - prevents XSS
                         chatBody.appendChild(msgDiv);
                         chatBody.scrollTop = chatBody.scrollHeight;
+                        console.log('[DIAG] 💬 Added message to terminal:', payload.substring(0, 50));
                     }
                 };
                 
