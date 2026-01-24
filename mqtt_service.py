@@ -73,19 +73,19 @@ def start_cleanup_timer():
     cleanup_inactive_users()
     threading.Timer(600, start_cleanup_timer).start()
 
-# Room-Specific AI Prompts
+# Room-Specific AI Prompts (Multilingual)
 ROOM_PROMPTS = {
-    "living_room": """Tu esi TermAi, TermOS LT sistemos AI asistentas. Padėk vartotojams naviguoti tarp kambarių: biblioteka, studija, dirbtuvės, poilsio, laboratorija. Kalbėk lietuviškai.""",
+    "living_room": """You are TermAi, AI assistant for TermOS LT system. Help users navigate between rooms: library, studio, workshop, lounge, think_tank. IMPORTANT: Respond in the same language as the user's message (Lithuanian, English, etc.).""",
     
-    "library": """Tu esi AI Bibliotekininkas. Atsakyk į klausimus, mokyk, paaiškink sąvokas. Generuok mokymosi medžiagą. Kalbėk lietuviškai kaip išmintingas profesorius.""",
+    "library": """You are AI Librarian. Answer questions, teach, explain concepts. Generate learning materials. IMPORTANT: Respond in the same language as the user's message.""",
     
-    "studio": """Tu esi AI Menininkas. Kūryk meną, muziką, dizainą. Jei prašoma sukurti app/žaidimą, grąžink TIKTAI JSON formatą su 'type', 'title', 'content' laukais.""",
+    "studio": """You are AI Artist. Create art, music, design. If asked to create app/game, return ONLY JSON format with 'type', 'title', 'content' fields. IMPORTANT: Respond in the same language as the user's message.""",
     
-    "workshop": """Tu esi AI Inžinierius. Programuok, spręsk techninius klausimus. Jei kuriamas app, grąžink TIKTAI JSON: {"type":"app","title":"App pavadinimas","content":"HTML/CSS/JS kodas"}""",
+    "workshop": """You are AI Engineer. Program, solve technical problems. If creating app, return ONLY JSON: {"type":"app","title":"App name","content":"HTML/CSS/JS code"}. IMPORTANT: Respond in the same language as the user's message.""",
     
-    "lounge": """Tu esi AI Pramogų vedėjas. Kurik žaidimus, juokus, istorijas. Žaidimams grąžink JSON: {"type":"game","title":"Žaidimo pavadinimas","content":"žaidimo logika"}""",
+    "lounge": """You are AI Entertainment host. Create games, jokes, stories. For games return JSON: {"type":"game","title":"Game name","content":"game logic"}. IMPORTANT: Respond in the same language as the user's message.""",
     
-    "think_tank": """Tu esi AI Strategas. Spręsk problemas, generuok idėjas, planuok projektus. Analizuok ir siūlyk sprendimus."""
+    "think_tank": """You are AI Strategist. Solve problems, generate ideas, plan projects. Analyze and suggest solutions. IMPORTANT: Respond in the same language as the user's message."""
 }
 
 def ai_call(messages, room):
@@ -106,20 +106,36 @@ def ai_call(messages, room):
         return get_fallback_response(messages)
 
 def get_fallback_response(messages):
-    """Fallback AI responses in Lithuanian"""
+    """Multilingual fallback AI responses"""
     if not messages:
-        return "Labas! Aš esu TERMAI. Kaip galiu padėti?"
+        return "Hello! I'm TERMAI. How can I help? / Labas! Aš esu TERMAI. Kaip galiu padėti?"
     
     last_msg = messages[-1].get('content', '').lower() if messages else ''
     
-    if 'labas' in last_msg or 'hello' in last_msg:
-        return "Labas! Aš esu TERMAI, jūsų AI asistentas. Kuo galiu padėti?"
+    # Detect language and respond accordingly
+    lithuanian_words = ['labas', 'kas', 'tu', 'esi', 'kaip', 'galiu', 'padėti', 'ačiū', 'dėkoju']
+    is_lithuanian = any(word in last_msg for word in lithuanian_words)
+    
+    if 'labas' in last_msg or 'hello' in last_msg or 'hi' in last_msg:
+        if is_lithuanian:
+            return "Labas! Aš esu TERMAI, jūsų AI asistentas. Kuo galiu padėti?"
+        else:
+            return "Hello! I'm TERMAI, your AI assistant. How can I help you?"
     elif 'kas tu esi' in last_msg or 'who are you' in last_msg:
-        return "Aš esu TERMAI - dirbtinio intelekto asistentas TermChat LT sistemoje. Kalbėkite su manimi lietuviškai!"
+        if is_lithuanian:
+            return "Aš esu TERMAI - dirbtinio intelekto asistentas TermChat LT sistemoje."
+        else:
+            return "I'm TERMAI - an AI assistant in the TermChat LT system."
     elif '?' in last_msg:
-        return "Tai įdomus klausimas! Deja, šiuo metu turiu ribotą funkcionalumą, bet stengiuosi padėti."
+        if is_lithuanian:
+            return "Tai įdomus klausimas! Stengiuosi atsakyti kiek galiu."
+        else:
+            return "That's an interesting question! I'll try my best to answer."
     else:
-        return "Suprantu jus! Aš esu TERMAI ir stengiuosi atsakyti lietuviškai. Užduokite man klausimą!"
+        if is_lithuanian:
+            return "Suprantu jus! Aš esu TERMAI. Užduokite man klausimą!"
+        else:
+            return "I understand! I'm TERMAI. Feel free to ask me anything!"
 
 def handle_admin(payload):
     """Admin command handler"""
