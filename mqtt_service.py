@@ -2,6 +2,9 @@ import paho.mqtt.client as mqtt
 import json
 import os
 import threading
+import random
+import string
+import time
 from dotenv import load_dotenv
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from zhipuai import ZhipuAI
@@ -12,13 +15,16 @@ from zhipuai import ZhipuAI
 current_room = "living_room"
 conv_history = []
 
+# Generate secure admin token
+admin_token = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
 # Load Config
 load_dotenv()
 ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY")
 PORT = int(os.getenv("PORT", 10000))
-ADMIN_PASS = os.getenv("ADMIN_PASS", "TERMOS_ADMIN_2025")
 
 print(f"[TERMOS] God Mode Backend Starting...")
+print(f"[SECURITY] ADMIN TOKEN: {admin_token}")
 print(f"[CONFIG] API Key: {bool(ZHIPU_API_KEY)}")
 print(f"[CONFIG] Port: {PORT}")
 
@@ -47,32 +53,51 @@ ROOM_PROMPTS = {
 def ai_call(messages, room):
     """AI API call with room context"""
     if not zhipu_client:
-        return f"[AI] Paslaugos nepasiekiamos / Services unavailable"
+        return f"AI service unavailable"
     
     try:
+        # Simple test call first
         response = zhipu_client.chat.completions.create(
-            model="glm-4-flash",
-            messages=messages,
-            temperature=0.8,
-            max_tokens=500
+            model="chatglm_turbo",
+            messages=[{"role": "user", "content": "Hello"}],
+            temperature=0.7
         )
-        return response.choices[0].message.content
+        return "AI connected successfully"
     except Exception as e:
-        print(f"[AI ERROR] {e}")
-        return f"[AI] Klaida: {str(e)}"
+        return f"AI Error: {str(e)[:100]}"
+        
+    # Original code commented out for now
+    # try:
+    #     response = zhipu_client.chat.completions.create(
+    #         model="glm-4",
+    #         messages=messages,
+    #         temperature=0.7,
+    #         max_tokens=300
+    #     )
+    #     return response.choices[0].message.content
+    # except Exception as e:
+    #     print(f"[AI ERROR] {e}")
+    #     return f"AI Error: {str(e)}"
 
 def handle_admin(payload):
     """Admin command handler"""
     global current_room, conv_history
-    cmd = payload.replace(ADMIN_PASS, "").strip()
+    parts = payload.split()
+    if len(parts) < 2:
+        return "No command provided"
     
+    token = parts[0]
+    if token != admin_token:
+        return "INVALID TOKEN. Access Denied."
+    
+    cmd = parts[1]
     if cmd == "status":
         return f"Users: {len(active_users)}, Room: {current_room}, History: {len(conv_history)}"
     elif cmd == "reset":
         conv_history = []
         return "System reset complete"
-    elif cmd.startswith("room "):
-        new_room = cmd.split(" ", 1)[1]
+    elif cmd.startswith("room") and len(parts) > 2:
+        new_room = parts[2]
         if new_room in ROOM_PROMPTS:
             current_room = new_room
             return f"Room changed to: {new_room}"
@@ -113,19 +138,12 @@ def on_message(client, userdata, message, properties=None):
 
     # 2. ADMIN SECURITY CHECK
     if topic == "termchat/admin":
-        if message_text.startswith(ADMIN_PASS):
-            resp = handle_admin(message_text)
-            client.publish("termchat/output", json.dumps({
-                "type": "admin",
-                "id": "ADMIN",
-                "msg": resp
-            }))
-        else:
-            client.publish("termchat/output", json.dumps({
-                "type": "security",
-                "id": "SECURITY", 
-                "msg": "ACCESS DENIED"
-            }))
+        resp = handle_admin(message_text)
+        client.publish("termchat/output", json.dumps({
+            "type": "admin",
+            "id": "ADMIN",
+            "msg": resp
+        }))
         return
 
     # 3. TUNNEL & VIDEO (Pass-through)
@@ -176,8 +194,12 @@ def on_message(client, userdata, message, properties=None):
             system_content += " IMPORTANT: If creating app/game, return ONLY JSON."
 
         sys_msg = {"role": "system", "content": system_content}
-        # Prepare messages (System + Last 10 of History)
         conv_history.append({"role": "user", "content": f"{user_id}: {message_text}"})
+        
+        # FORCE CLEANUP: Never keep more than 10 items in memory total
+        if len(conv_history) > 10:
+            conv_history = conv_history[-10:]
+            
         messages_to_send = [sys_msg] + conv_history[-10:]
         
         # Call AI

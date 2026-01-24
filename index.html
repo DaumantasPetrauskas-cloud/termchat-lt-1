@@ -881,7 +881,16 @@
             const div = document.createElement('div');
             div.style.marginBottom = '5px';
             div.style.color = user === 'SYSTEM' ? '#00ff00' : user === 'ERROR' ? '#ff0000' : '#33ff00';
-            div.textContent = `[${user}] ${text}`;
+            
+            // SECURE: Use textContent to prevent XSS
+            const userSpan = document.createElement('span');
+            userSpan.textContent = `[${user}] `;
+            
+            const textSpan = document.createElement('span');
+            textSpan.textContent = text;
+            
+            div.appendChild(userSpan);
+            div.appendChild(textSpan);
             messages.appendChild(div);
             messages.scrollTop = messages.scrollHeight;
         }
