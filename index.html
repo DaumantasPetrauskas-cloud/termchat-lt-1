@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TERMCHAT LT: Unified Edition</title>
+  <title>TERMCHAT LT</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -13,7 +13,7 @@
       overflow: hidden;
     }
     #terminal {
-      width: 100%; max-width: 900px; height: 95vh;
+      width: 100%; max-width: 800px; height: 90vh;
       background-color: #050505; border: 2px solid #33ff00;
       padding: 20px; display: flex; flex-direction: column;
       position: relative; box-shadow: 0 0 20px rgba(51, 255, 0, 0.2);
@@ -47,18 +47,6 @@
       border-bottom: 1px solid #33ff00; padding-bottom: 10px; margin-bottom: 10px;
       display: flex; justify-content: space-between; text-transform: uppercase; font-weight: bold; z-index: 3;
     }
-    .menu-bar {
-      display: flex; gap: 20px; margin-bottom: 10px; z-index: 3;
-    }
-    .menu-btn {
-      background: none; border: none; color: #33ff00; font-weight: bold; font-size: 1rem;
-      cursor: pointer; padding: 2px 8px; border-radius: 2px;
-    }
-    .menu-btn.active, .menu-btn:hover { background: #222; }
-    .status-bar {
-      font-size: 0.95rem; margin-bottom: 10px; color: #99ff99;
-      display: flex; gap: 20px; align-items: center;
-    }
     #output { flex-grow: 1; overflow-y: auto; margin-bottom: 10px; white-space: pre-wrap; z-index: 3; font-size: 1.1rem; padding-right: 5px; }
     #output::-webkit-scrollbar { width: 8px; }
     #output::-webkit-scrollbar-track { background: #000; }
@@ -83,31 +71,21 @@
     }
     .confirm-btn { background: #33ff00; color: #111; border: none; padding: 5px 10px; margin: 0 5px; cursor: pointer; border-radius: 2px; }
     .confirm-btn:hover { background: #55ff33; }
-    .plugin-output { color: #00ffff; margin: 8px 0; }
   </style>
+  <!--
+    IMPORTANT: Your script.js must use:
+      - MQTT_PORT = 8884
+      - useSSL: true
+      - broker.hivemq.com
+    for secure MQTT over WSS!
+  -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
 </head>
 <body>
   <div id="terminal">
     <div class="header">
       <span id="status-text" class="status">🔊 OFFLINE</span>
-      <span>## TERMOS LT: UNIFIED EDITION</span>
-    </div>
-    <div class="menu-bar">
-      <button class="menu-btn active" id="menu-chat">CHAT</button>
-      <button class="menu-btn" id="menu-api">API</button>
-      <button class="menu-btn" id="menu-local">LOCAL</button>
-      <button class="menu-btn" id="menu-admin">ADMIN</button>
-      <button class="menu-btn" id="menu-monitor">SYSTEM MONITOR</button>
-      <button class="menu-btn" id="menu-dev">DEV TOOLS</button>
-      <button class="menu-btn" id="menu-apps">APP STORE</button>
-      <button class="menu-btn" id="menu-shell">REMOTE SHELL</button>
-    </div>
-    <div class="status-bar" id="status-bar">
-      <span id="user-info">@GUEST</span>
-      <span id="user-level">LVL. 1 NEWBIE</span>
-      <span id="user-xp">XP: 0</span>
-      <span id="room-info">ROOM: LIVING_ROOM</span>
+      <span>## TERMOS LT v1.0</span>
     </div>
     <div id="output">
       <div id="intro-screen">
@@ -118,7 +96,6 @@
         <p>PRESS [ENTER] TO ESTABLISH UPLINK</p>
       </div>
       <div id="chat-room" class="hidden"></div>
-      <div id="plugin-output" class="plugin-output hidden"></div>
     </div>
     <div class="input-line">
       <span class="prompt">></span>
