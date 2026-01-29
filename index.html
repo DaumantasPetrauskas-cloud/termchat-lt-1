@@ -1,107 +1,473 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TERMCHAT LT</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background-color: #111; color: #33ff00;
-      font-family: 'Courier New', Courier, monospace;
-      height: 100vh; display: flex; justify-content: center; align-items: center;
-      overflow: hidden;
-    }
-    #terminal {
-      width: 100%; max-width: 800px; height: 90vh;
-      background-color: #050505; border: 2px solid #33ff00;
-      padding: 20px; display: flex; flex-direction: column;
-      position: relative; box-shadow: 0 0 20px rgba(51, 255, 0, 0.2);
-    }
-    #terminal::before {
-      content: " "; display: block; position: absolute;
-      top: 0; left: 0; bottom: 0; right: 0;
-      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-      z-index: 2; background-size: 100% 2px, 3px 100%; pointer-events: none;
-    }
-    @keyframes flicker {
-      0% { opacity: 0.97; }
-      5% { opacity: 0.95; }
-      10% { opacity: 0.9; }
-      15% { opacity: 0.95; }
-      20% { opacity: 0.99; }
-      50% { opacity: 0.95; }
-      80% { opacity: 0.9; }
-      100% { opacity: 0.97; }
-    }
-    #terminal::after {
-      content: " "; display: block; position: absolute;
-      top: 0; left: 0; bottom: 0; right: 0;
-      background: rgba(18, 16, 16, 0.1);
-      opacity: 0;
-      z-index: 2;
-      pointer-events: none;
-      animation: flicker 0.15s infinite;
-    }
-    .header {
-      border-bottom: 1px solid #33ff00; padding-bottom: 10px; margin-bottom: 10px;
-      display: flex; justify-content: space-between; text-transform: uppercase; font-weight: bold; z-index: 3;
-    }
-    #output { flex-grow: 1; overflow-y: auto; margin-bottom: 10px; white-space: pre-wrap; z-index: 3; font-size: 1.1rem; padding-right: 5px; }
-    #output::-webkit-scrollbar { width: 8px; }
-    #output::-webkit-scrollbar-track { background: #000; }
-    #output::-webkit-scrollbar-thumb { background: #33ff00; border: 1px solid #000; }
-    .input-line { display: flex; align-items: center; border-top: 1px solid #33ff00; padding-top: 10px; z-index: 3; }
-    .prompt { margin-right: 10px; font-weight: bold; animation: blink 1s step-end infinite; }
-    input[type="text"] {
-      background: transparent; border: none; color: #33ff00;
-      font-family: 'Courier New', Courier, monospace; font-size: 1.1rem; flex-grow: 1; outline: none;
-      text-transform: uppercase;
-    }
-    .hidden { display: none !important; }
-    .system-msg { color: #ffff00; font-style: italic; }
-    .user-msg { color: #ffffff; font-weight: bold; }
-    .other-msg { color: #33ff00; }
-    @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
-    .status-offline { color: red; }
-    .status-online { color: #33ff00; text-shadow: 0 0 5px #33ff00; }
-    .confirm-box {
-      background: #222; border: 1px solid #33ff00; color: #33ff00; padding: 10px; margin: 10px 0;
-      font-size: 1rem; border-radius: 4px;
-    }
-    .confirm-btn { background: #33ff00; color: #111; border: none; padding: 5px 10px; margin: 0 5px; cursor: pointer; border-radius: 2px; }
-    .confirm-btn:hover { background: #55ff33; }
-  </style>
-  <!--
-    IMPORTANT: Your script.js must use:
-      - MQTT_PORT = 8884
-      - useSSL: true
-      - broker.hivemq.com
-    for secure MQTT over WSS!
-  -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TermChat // LLM Terminal</title>
+    <style>
+        :root {
+            --bg-color: #050505;
+            --term-green: #33ff00;
+            --term-green-dim: #1a8000;
+            --term-glow: 0 0 10px rgba(51, 255, 0, 0.5);
+            --crt-scanline: rgba(18, 16, 16, 0.3);
+            --font-stack: 'Courier New', Courier, monospace;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            color: var(--term-green);
+            font-family: var(--font-stack);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        /* CRT Screen Effect Container */
+        .crt-container {
+            width: 100%;
+            height: 100%;
+            max-width: 1000px;
+            max-height: 800px;
+            background-color: var(--bg-color);
+            position: relative;
+            border: 2px solid #333;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* CRT Scanline Overlay */
+        .crt-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                to bottom,
+                rgba(255, 255, 255, 0),
+                rgba(255, 255, 255, 0) 50%,
+                rgba(0, 0, 0, 0.2) 50%,
+                rgba(0, 0, 0, 0.2)
+            );
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        /* Subtle Flicker Animation */
+        @keyframes flicker {
+            0% { opacity: 0.97; }
+            5% { opacity: 0.95; }
+            10% { opacity: 0.9; }
+            15% { opacity: 0.95; }
+            100% { opacity: 0.97; }
+        }
+        
+        .crt-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            overflow-y: auto;
+            animation: flicker 0.15s infinite;
+            text-shadow: var(--term-glow);
+            scrollbar-width: none; /* Firefox */
+        }
+        
+        .crt-content::-webkit-scrollbar {
+            display: none; /* Chrome/Safari */
+        }
+
+        /* Header */
+        header {
+            border-bottom: 1px solid var(--term-green-dim);
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            text-transform: uppercase;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+        }
+
+        .status-badge {
+            background: var(--term-green);
+            color: black;
+            padding: 2px 5px;
+            font-weight: bold;
+        }
+
+        .status-badge.offline {
+            background: #ff3333;
+        }
+
+        /* Chat History */
+        #chat-output {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .message-line {
+            margin-bottom: 5px;
+            line-height: 1.4;
+        }
+
+        .user-prefix {
+            color: #fff;
+            margin-right: 10px;
+        }
+
+        .ai-prefix {
+            color: var(--term-green-dim);
+            margin-right: 10px;
+        }
+
+        .typing-cursor::after {
+            content: '█';
+            animation: blink 1s step-end infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* Input Area */
+        .input-area {
+            display: flex;
+            align-items: center;
+            border-top: 1px solid var(--term-green-dim);
+            padding-top: 20px;
+            margin-top: 10px;
+        }
+
+        .prompt-symbol {
+            margin-right: 10px;
+            font-weight: bold;
+        }
+
+        #user-input {
+            background: transparent;
+            border: none;
+            color: var(--term-green);
+            font-family: var(--font-stack);
+            font-size: 1rem;
+            flex: 1;
+            outline: none;
+            text-shadow: var(--term-glow);
+            caret-color: var(--term-green);
+        }
+
+        /* Settings Button */
+        .settings-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: transparent;
+            border: 1px solid var(--term-green-dim);
+            color: var(--term-green-dim);
+            cursor: pointer;
+            padding: 5px 10px;
+            font-family: var(--font-stack);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            z-index: 20;
+            transition: all 0.2s;
+        }
+
+        .settings-btn:hover {
+            border-color: var(--term-green);
+            color: var(--term-green);
+            background: rgba(51, 255, 0, 0.1);
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background: var(--bg-color);
+            border: 1px solid var(--term-green);
+            padding: 20px;
+            width: 300px;
+            box-shadow: 0 0 20px rgba(51, 255, 0, 0.2);
+        }
+
+        .modal-content h3 {
+            margin-top: 0;
+            border-bottom: 1px dashed var(--term-green-dim);
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.8rem;
+        }
+
+        .form-group input {
+            width: 100%;
+            background: #111;
+            border: 1px solid var(--term-green-dim);
+            color: var(--term-green);
+            padding: 5px;
+            font-family: var(--font-stack);
+        }
+
+        .btn-primary {
+            background: var(--term-green);
+            color: black;
+            border: none;
+            padding: 5px 15px;
+            font-family: var(--font-stack);
+            cursor: pointer;
+            font-weight: bold;
+            width: 100%;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.8;
+        }
+
+        /* Utility */
+        .hidden { display: none; }
+    </style>
 </head>
 <body>
-  <div id="terminal">
-    <div class="header">
-      <span id="status-text" class="status">🔊 OFFLINE</span>
-      <span>## TERMOS LT v1.0</span>
+
+<div class="crt-container">
+    <div class="crt-overlay"></div>
+    <button class="settings-btn" onclick="toggleSettings()">Config [F1]</button>
+
+    <div class="crt-content">
+        <header>
+            <div>TermChat v1.0</div>
+            <div id="connection-status" class="status-badge offline">DISCONNECTED</div>
+        </header>
+
+        <div id="chat-output">
+            <div class="message-line">
+                <span class="ai-prefix">SYSTEM:</span>
+                <span>Initializing connection...</span>
+            </div>
+            <div class="message-line">
+                <span class="ai-prefix">SYSTEM:</span>
+                <span>Welcome to TermChat. Ensure FastAPI backend is running on configured port.</span>
+            </div>
+            <br>
+        </div>
+
+        <div class="input-area">
+            <span class="prompt-symbol">root@llm:~#</span>
+            <input type="text" id="user-input" placeholder="Enter command or query..." autocomplete="off" autofocus>
+        </div>
     </div>
-    <div id="output">
-      <div id="intro-screen">
-        <p>INITIALIZING TERMOS...</p>
-        <p>LOADING MODULES... [OK]</p>
-        <p>CHECKING PERIPHERALS... [OK]</p>
-        <p>&nbsp;</p>
-        <p>PRESS [ENTER] TO ESTABLISH UPLINK</p>
-      </div>
-      <div id="chat-room" class="hidden"></div>
+</div>
+
+<!-- Settings Modal -->
+<div id="settings-modal" class="modal">
+    <div class="modal-content">
+        <h3>System Config</h3>
+        <div class="form-group">
+            <label>API Endpoint</label>
+            <input type="text" id="api-url" value="http://localhost:8000/chat">
+        </div>
+        <div class="form-group">
+            <label>System Prompt (Optional)</label>
+            <input type="text" id="system-prompt" placeholder="You are a helpful coding assistant.">
+        </div>
+        <button class="btn-primary" onclick="saveSettings()">Save & Close</button>
+        <div style="margin-top:10px; text-align:center; font-size:0.7rem; color:#666; cursor:pointer;" onclick="toggleSettings()">Cancel</div>
     </div>
-    <div class="input-line">
-      <span class="prompt">></span>
-      <input type="text" id="command-input" autocomplete="off" autofocus>
-    </div>
-  </div>
-  <script src="script.js"></script>
+</div>
+
+<script>
+    // --- Configuration ---
+    let API_URL = localStorage.getItem('termchat_api_url') || 'http://localhost:8000/chat';
+    let SYSTEM_PROMPT = localStorage.getItem('termchat_sys_prompt') || '';
+    
+    // --- DOM Elements ---
+    const chatOutput = document.getElementById('chat-output');
+    const userInput = document.getElementById('user-input');
+    const statusBadge = document.getElementById('connection-status');
+    const modal = document.getElementById('settings-modal');
+    const apiUrlInput = document.getElementById('api-url');
+    const sysPromptInput = document.getElementById('system-prompt');
+
+    // --- State ---
+    let isProcessing = false;
+
+    // --- Initialization ---
+    apiUrlInput.value = API_URL;
+    sysPromptInput.value = SYSTEM_PROMPT;
+    checkConnection();
+    userInput.focus();
+
+    // --- Event Listeners ---
+    userInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !isProcessing) {
+            handleInput();
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'F1') {
+            e.preventDefault();
+            toggleSettings();
+        }
+    });
+
+    // --- Core Logic ---
+
+    function appendMessage(sender, text, isTyping = false) {
+        const div = document.createElement('div');
+        div.className = 'message-line';
+        
+        const prefixSpan = document.createElement('span');
+        prefixSpan.className = sender === 'user' ? 'user-prefix' : 'ai-prefix';
+        prefixSpan.textContent = sender === 'user' ? 'USER:' : 'AI:';
+        
+        const contentSpan = document.createElement('span');
+        contentSpan.className = isTyping ? 'typing-cursor' : '';
+        contentSpan.textContent = text;
+
+        div.appendChild(prefixSpan);
+        div.appendChild(contentSpan);
+        chatOutput.appendChild(div);
+        
+        // Scroll to bottom
+        const container = document.querySelector('.crt-content');
+        container.scrollTop = container.scrollHeight;
+
+        return contentSpan; // Return element for typing animation
+    }
+
+    async function handleInput() {
+        const text = userInput.value.trim();
+        if (!text) return;
+
+        // Display user message
+        appendMessage('user', text);
+        userInput.value = '';
+        
+        isProcessing = true;
+        
+        // Prepare UI for AI response
+        const aiResponseElement = appendMessage('ai', '', true); // Empty, waiting for typing
+        statusBadge.textContent = "PROCESSING";
+        statusBadge.className = "status-badge"; // Remove offline class
+
+        try {
+            // Construct prompt (combine system prompt if set)
+            let finalPrompt = text;
+            if (SYSTEM_PROMPT) {
+                finalPrompt = `${SYSTEM_PROMPT}\n\nUser: ${text}`;
+            }
+
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: finalPrompt })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Server Error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            
+            // Animate typing effect
+            await typeWriter(aiResponseElement, data.reply || "");
+            
+            statusBadge.textContent = "ONLINE";
+            statusBadge.className = "status-badge"; // Green
+
+        } catch (error) {
+            aiResponseElement.textContent = `Error: ${error.message}. Is the backend running?`;
+            aiResponseElement.style.color = '#ff3333';
+            statusBadge.textContent = "OFFLINE";
+            statusBadge.className = "status-badge offline";
+        } finally {
+            aiResponseElement.classList.remove('typing-cursor'); // Stop blinking cursor
+            isProcessing = false;
+            userInput.focus();
+        }
+    }
+
+    // --- Typing Animation ---
+    function typeWriter(element, text, speed = 5) {
+        return new Promise((resolve) => {
+            let i = 0;
+            element.textContent = "";
+            
+            function type() {
+                if (i < text.length) {
+                    element.textContent += text.charAt(i);
+                    i++;
+                    
+                    // Scroll while typing
+                    const container = document.querySelector('.crt-content');
+                    container.scrollTop = container.scrollHeight;
+
+                    setTimeout(type, speed);
+                } else {
+                    resolve();
+                }
+            }
+            type();
+        });
+    }
+
+    // --- Settings & Connection ---
+    function toggleSettings() {
+        modal.style.display = modal.style.display === 'flex' ? 'none' : 'flex';
+    }
+
+    function saveSettings() {
+        API_URL = apiUrlInput.value;
+        SYSTEM_PROMPT = sysPromptInput.value;
+        localStorage.setItem('termchat_api_url', API_URL);
+        localStorage.setItem('termchat_sys_prompt', SYSTEM_PROMPT);
+        toggleSettings();
+        checkConnection();
+    }
+
+    async function checkConnection() {
+        // Simple ping to check if server is there (optional, backend might not have a / route, 
+        // so we just assume if we don't get a network error on the real chat, we are good.
+        // We'll just update UI state based on last interaction for now).
+        statusBadge.textContent = "STANDBY";
+    }
+</script>
+
 </body>
 </html>
